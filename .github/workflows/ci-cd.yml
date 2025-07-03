@@ -36,7 +36,7 @@ jobs:
       with:
         context: ./command-service
         push: true
-        tags: your-dockerhub-id/command-service:latest
+        tags: kyla333/command-service:latest
 
     # 6. query-service 이미지 빌드 및 푸시
     - name: Build and push query-service
@@ -44,7 +44,7 @@ jobs:
       with:
         context: ./query-service
         push: true
-        tags: your-dockerhub-id/query-service:latest
+        tags: kyla333/query-service:latest
 
     # 7. frontend-app 이미지 빌드 및 푸시
     - name: Build and push frontend-app
@@ -52,4 +52,4 @@ jobs:
       with:
         context: ./frontend-project-folder # 프론트엔드 폴더 경로
         push: true
-        tags: your-dockerhub-id/frontend-app:latest
+        tags: kyla333/frontend-app:latest
