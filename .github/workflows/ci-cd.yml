@@ -50,6 +50,6 @@ jobs:
     - name: Build and push frontend-app
       uses: docker/build-push-action@v4
       with:
-        context: ./frontend-project-folder # 프론트엔드 폴더 경로
+        context: ./todo-frontend # 프론트엔드 폴더 경로
         push: true
         tags: kyla333/frontend-app:latest
