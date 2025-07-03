@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-configmap
+data:
+  # application.yml에서 사용했던 환경 변수들의 값을 여기에 정의합니다.
+  MYSQL_HOST: "mysql-service"
+  MONGO_HOST: "mongo-service"
+  KAFKA_BOOTSTRAP_SERVERS: "kafka-service:9092"

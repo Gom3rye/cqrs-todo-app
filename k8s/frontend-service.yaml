@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+spec:
+  # LoadBalancer 타입은 클라우드 환경에서 외부 IP를 할당받아 서비스를 노출합니다.
+  type: LoadBalancer
+  selector:
+    app: frontend
+  ports:
+  - protocol: TCP
+    port: 80 # 외부에서 80 포트로 접속
+    targetPort: 80 # 컨테이너의 80 포트로 전달

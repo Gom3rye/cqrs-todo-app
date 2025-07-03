@@ -1,0 +1,3 @@
+rootProject.name = 'cqrs-todo-app'
+include 'command-service'
+include 'query-service'

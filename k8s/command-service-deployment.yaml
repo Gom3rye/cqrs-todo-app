@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: command-service-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: command-service
+  template:
+    metadata:
+      labels:
+        app: command-service
+    spec:
+      containers:
+      - name: command-service
+        image: kyla333/command-service:latest # 본인 ID로 변경
+        ports:
+        - containerPort: 8080
+        envFrom: # ConfigMap에 있는 모든 Key-Value를 환경 변수로 가져옴
+        - configMapRef:
+            name: app-configmap
+        env: # Secret에서 특정 Key(password)만 가져옴
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: password

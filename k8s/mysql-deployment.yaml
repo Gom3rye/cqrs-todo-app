@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+      - name: mysql
+        image: mysql:8.0
+        ports:
+        - containerPort: 3306
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret # 1단계에서 만든 Secret의 이름
+              key: password     # Secret 안의 데이터 key 이름
+        - name: MYSQL_DATABASE
+          value: "todo_write_db"
+        volumeMounts:
+        - name: mysql-storage
+          mountPath: /var/lib/mysql
+      # 위에서 연결한 볼륨의 실제 소스는 mysql-pvc 입니다.
+      volumes:
+      - name: mysql-storage
+        persistentVolumeClaim:
+          claimName: mysql-pvc

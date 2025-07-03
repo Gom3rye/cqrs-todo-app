@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongo-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongo
+  template:
+    metadata:
+      labels:
+        app: mongo
+    spec:
+      containers:
+      - name: mongo
+        image: mongo:latest
+        ports:
+        - containerPort: 27017
+        volumeMounts: # PVC를 컨테이너의 데이터 폴더에 연결
+        - name: mongo-storage
+          mountPath: /data/db
+      volumes: # 위에서 연결한 볼륨의 소스는 PVC
+      - name: mongo-storage
+        persistentVolumeClaim:
+          claimName: mongo-pvc

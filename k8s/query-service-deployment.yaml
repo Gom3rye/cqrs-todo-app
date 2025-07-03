@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: query-service-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: query-service
+  template:
+    metadata:
+      labels:
+        app: query-service
+    spec:
+      containers:
+      - name: query-service
+        image: kyla333/query-service:latest
+        ports:
+        - containerPort: 8081
+        envFrom:
+        # app-configmap에 정의된 모든 Key-Value를 환경 변수로 가져옵니다.
+        - configMapRef:
+            name: app-configmap
