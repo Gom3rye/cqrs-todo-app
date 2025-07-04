@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  # 이 이름은 StatefulSet에서 참조하므로 중요합니다.
+  name: mysql-headless-service
+spec:
+  # clusterIP: None 으로 설정하여 Headless 서비스로 만듭니다.
+  clusterIP: None
+  selector:
+    app: mysql
+  ports:
+    - protocol: TCP
+      port: 3306
+      targetPort: 3306

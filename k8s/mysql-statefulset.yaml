@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql-statefulset
+spec:
+  # 이 이름은 위 Headless Service의 이름과 반드시 일치해야 합니다.
+  serviceName: "mysql-headless-service"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+      - name: mysql
+        image: mysql:8.0
+        args:
+        - "--bind-address=0.0.0.0"
+        ports:
+        - containerPort: 3306
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: password
+        - name: MYSQL_DATABASE
+          value: "todo_write_db"
+        # Pod의 /var/lib/mysql 폴더를 아래 volumeClaimTemplates와 연결합니다.
+        volumeMounts:
+        - name: mysql-data
+          mountPath: /var/lib/mysql
+  
+  # ✅ 이 부분이 핵심입니다.
+  # Pod가 생성될 때마다 이 템플릿을 사용하여 자신만의 PVC를 자동으로 생성합니다.
+  volumeClaimTemplates:
+  - metadata:
+      name: mysql-data
+    spec:
+      storageClassName: hostpath
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 1Gi
