@@ -3,7 +3,10 @@ kind: ConfigMap
 metadata:
   name: app-configmap
 data:
-  # application.yml에서 사용했던 환경 변수들의 값을 여기에 정의합니다.
   MYSQL_HOST: "mysql-service"
+  MYSQL_PORT: "3306"
+  
   MONGO_HOST: "mongo-service"
+  MONGO_PORT: "27017"
+  
   KAFKA_BOOTSTRAP_SERVERS: "kafka-service:9092"

@@ -1,8 +1,11 @@
 // src/api/todoApi.js
 import axios from 'axios';
+// ✅ 읽기(GET) 요청을 위한 주소
+const READ_API_URL = '/api/query/todos';
+// ✅ 쓰기(POST, PUT, DELETE) 요청을 위한 주소
+const WRITE_API_URL = '/api/command/todos';
 
-const READ_API_URL = 'http://localhost:8081/api/todos';  // 읽기 서버 주소
-const WRITE_API_URL = 'http://localhost:8080/api/todos';  // 쓰기 서버 주소
+// const API_URL = '/api/todos';
 
 export const getTodos = async () => {
   try {

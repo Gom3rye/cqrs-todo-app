@@ -52,4 +52,4 @@ jobs:
       with:
         context: ./todo-frontend # 프론트엔드 폴더 경로
         push: true
-        tags: kyla333/frontend-app:latest
+        tags: kyla333/todo-frontend:latest

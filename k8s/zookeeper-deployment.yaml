@@ -17,6 +17,12 @@ spec:
         image: confluentinc/cp-zookeeper:7.5.3
         ports:
         - containerPort: 2181
+        # ✅ 이 부분을 tcpSocket 방식으로 완전히 교체합니다.
+        readinessProbe:
+          tcpSocket:
+            port: 2181
+          initialDelaySeconds: 10
+          periodSeconds: 5
         env:
         - name: ZOOKEEPER_CLIENT_PORT
           value: "2181"

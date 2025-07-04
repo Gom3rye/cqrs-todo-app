@@ -7,12 +7,12 @@ spring:
 
   data:
     mongodb:
-      uri: mongodb://localhost:27017/todo_read_db
+      uri: mongodb://${MONGO_HOST}:${MONGO_PORT}/todo_read_db
 
   # Kafka 접속 정보: 반드시 localhost를 사용해야 합니다.
   kafka:
     consumer:
-      bootstrap-servers: localhost:9092
+      bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
       group-id: todo-group
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer

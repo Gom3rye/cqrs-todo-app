@@ -1,6 +1,6 @@
 # --- 1단계: React 앱 빌드 ---
 # node 18 버전을 빌드 환경으로 사용
-FROM node:18-alpine as builder
+FROM node:18-alpine AS builder
 
 # 작업 디렉토리 설정
 WORKDIR /app
