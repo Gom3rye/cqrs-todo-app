@@ -25,7 +25,7 @@ spec:
   - metadata:
       name: mongo-data
     spec:
-      storageClassName: hostpath
+      storageClassName: nfs-storage
       accessModes: [ "ReadWriteOnce" ]
       resources:
         requests:

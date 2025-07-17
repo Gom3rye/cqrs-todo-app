@@ -40,7 +40,7 @@ spec:
   - metadata:
       name: mysql-data
     spec:
-      storageClassName: hostpath
+      storageClassName: nfs-storage
       accessModes: [ "ReadWriteOnce" ]
       resources:
         requests:
