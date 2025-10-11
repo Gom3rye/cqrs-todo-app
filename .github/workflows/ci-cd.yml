@@ -1,11 +1,11 @@
-name: Build and Push Docker Images
+name: Build, Push Docker Images, and Trigger Jenkins CD
 
 on:
   push:
     branches: [ "main" ] # main 브랜치에 푸시될 때 실행
 
 jobs:
-  build-and-push:
+  build-push-trigger:
     runs-on: ubuntu-latest # 작업은 우분투 환경에서 실행
     steps:
     # 1. Git 저장소의 코드를 내려받음
@@ -38,7 +38,12 @@ jobs:
         push: true
         tags: kyla333/command-service:latest
 
-    # 6. query-service 이미지 빌드 및 푸시
+    # 6. command-service 배포를 위해 Jenkins 호출
+    - name: Trigger Jenkins CD for command-service
+      run: |
+        curl -X POST "http://192.168.56.100:31441/generic-webhook-trigger/invoke?token=${{ secrets.JENKINS_TOKEN }}&SERVICE_NAME=command-service-deployment&IMAGE_TAG=latest"
+    
+    # 7. query-service 이미지 빌드 및 푸시
     - name: Build and push query-service
       uses: docker/build-push-action@v4
       with:
@@ -46,10 +51,20 @@ jobs:
         push: true
         tags: kyla333/query-service:latest
 
-    # 7. frontend-app 이미지 빌드 및 푸시
+    # 8. query-service 배포를 위해 Jenkins 호출
+    - name: Trigger Jenkins CD for query-service
+      run: |
+        curl -X POST "http://192.168.56.100:31441/generic-webhook-trigger/invoke?token=${{ secrets.JENKINS_TOKEN }}&SERVICE_NAME=query-service-deployment&IMAGE_TAG=latest"
+
+    # 9. frontend-app 이미지 빌드 및 푸시
     - name: Build and push frontend-app
       uses: docker/build-push-action@v4
       with:
         context: ./todo-frontend # 프론트엔드 폴더 경로
         push: true
         tags: kyla333/todo-frontend:latest
+
+    # 10. frontend-app 배포를 위해 Jenkins 호출
+    - name: Trigger Jenkins CD for frontend-app
+      run: |
+        curl -X POST "http://192.168.56.100:31441/generic-webhook-trigger/invoke?token=${{ secrets.JENKINS_TOKEN }}&SERVICE_NAME=frontend-deployment&IMAGE_TAG=latest"
