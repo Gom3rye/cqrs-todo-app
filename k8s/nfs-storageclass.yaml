@@ -2,6 +2,11 @@ apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: nfs-storage
+  # ✅ 이 annotation 블록을 추가하면 영구적으로 default 설정이 유지됩니다.
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
 provisioner: k8s-sigs.io/nfs-subdir-external-provisioner
 parameters:
   onDelete: "retain"
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
