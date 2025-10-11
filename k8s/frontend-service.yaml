@@ -3,8 +3,7 @@ kind: Service
 metadata:
   name: frontend-service
 spec:
-  # LoadBalancer 타입은 클라우드 환경에서 외부 IP를 할당받아 서비스를 노출합니다.
-  type: LoadBalancer
+  type: NodePort
   selector:
     app: frontend
   ports:

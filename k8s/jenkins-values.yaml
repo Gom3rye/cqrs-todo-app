@@ -1,0 +1,41 @@
+controller:
+  persistence:
+    storageClass: "nfs-storage"
+
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+    limits:
+      cpu: "1"
+      memory: "2Gi"
+
+  javaOpts: "-Xmx1536m"
+
+  readinessProbe:
+    initialDelaySeconds: 60
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 10
+
+  livenessProbe:
+    initialDelaySeconds: 120
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 12
+
+  volumes:
+    - type: HostPath
+      hostPath:
+        path: /var/run/docker.sock
+      name: docker-sock
+
+  volumeMounts:
+    - mountPath: /var/run/docker.sock
+      name: docker-sock
+
+  # ✅ 서비스 타입 설정은 여기!
+  serviceType: NodePort
+  servicePort: 8080
+  nodePort: 30007
+
