@@ -1,41 +1,48 @@
+# jenkins-values.yaml
 controller:
-  persistence:
-    storageClass: "nfs-storage"
-
-  resources:
-    requests:
-      cpu: "500m"
-      memory: "512Mi"
-    limits:
-      cpu: "1"
-      memory: "2Gi"
-
-  javaOpts: "-Xmx1536m"
-
-  readinessProbe:
-    initialDelaySeconds: 60
-    periodSeconds: 10
-    timeoutSeconds: 5
-    failureThreshold: 10
-
-  livenessProbe:
-    initialDelaySeconds: 120
-    periodSeconds: 10
-    timeoutSeconds: 5
-    failureThreshold: 12
-
-  volumes:
-    - type: HostPath
-      hostPath:
-        path: /var/run/docker.sock
-      name: docker-sock
-
-  volumeMounts:
-    - mountPath: /var/run/docker.sock
-      name: docker-sock
-
-  # ✅ 서비스 타입 설정은 여기!
   serviceType: NodePort
   servicePort: 8080
-  nodePort: 30007
+  nodePort: 32000
+  
+  installPlugins:
+    - kubernetes
+    - workflow-aggregator
+    - git
+    - configuration-as-code
+    - docker-workflow
 
+  serviceAccount:
+    create: true
+
+  # 플러그인 다운로드 미러 사이트를 공식 서버로 강제하여 네트워크 문제를 해결합니다.
+  containerEnv:
+    - name: JENKINS_UC
+      value: https://updates.jenkins.io/update-center.json
+    - name: JENKINS_UC_EXPERIMENTAL
+      value: https://updates.jenkins.io/experimental/update-center.json
+    - name: JENKINS_INCREMENTALS_REPO_MIRROR
+      value: https://repo.jenkins-ci.org/incrementals
+
+  containerSecurityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    
+  podSecurityContext:
+    fsGroup: 1000
+
+agent:
+  kubernetes:
+    namespace: default
+    jenkinsUrl: http://jenkins.default.svc.cluster.local:8080
+    podTemplates: {}
+
+persistence:
+  enabled: true
+  storageClass: "nfs-storage"
+  size: "8Gi"
+  accessMode: ReadWriteOnce
+  annotations: {}
+  labels: {}
+  securityContext:
+    enabled: false
