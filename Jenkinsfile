@@ -1,17 +1,14 @@
-// Jenkinsfile
+// Jenkinsfile (최종 버전)
 properties([
     parameters([
         string(name: 'BRANCH', defaultValue: 'main', description: 'Which branch to build?')
     ])
 ])
-
 pipeline {
-    // 동적으로 생성될 Agent Pod를 정의합니다.
     agent {
         kubernetes {
-            cloud 'kubernetes' 
-            // Helm으로 생성된 기본 서비스 어카운트 이름('jenkins')을 사용합니다.
-            serviceAccount 'jenkins' 
+            cloud 'kubernetes'
+            serviceAccount 'jenkins'
             yaml """
 apiVersion: v1
 kind: Pod
@@ -32,21 +29,19 @@ spec:
   volumes:
     - name: kaniko-secret
       secret:
-        secretName: dockerhub-secret # Kaniko가 사용할 Docker Hub 인증 시크릿
+        secretName: dockerhub-secret
         items:
           - key: .dockerconfigjson
             path: config.json
 """
         }
     }
-
     environment {
         DOCKERHUB_ID          = 'kyla333'
         COMMAND_SERVICE_IMG = "${DOCKERHUB_ID}/command-service"
         QUERY_SERVICE_IMG   = "${DOCKERHUB_ID}/query-service"
         FRONTEND_IMG        = "${DOCKERHUB_ID}/todo-frontend"
     }
-
     stages {
         stage('Checkout') {
             steps {
@@ -56,7 +51,6 @@ spec:
                 }
             }
         }
-        
         stage('Detect Changes') {
             steps {
                 script {
@@ -70,7 +64,6 @@ spec:
                 }
             }
         }
-
         stage('Build & Deploy Changed Services') {
             parallel {
                 stage('Command Service') {
@@ -78,17 +71,8 @@ spec:
                     steps {
                         script {
                             def imageName = "${env.COMMAND_SERVICE_IMG}:${env.GIT_COMMIT_SHORT}"
-                            // Gradle 빌드를 gradle 컨테이너에서 실행
-                            container('gradle') {
-                                sh './gradlew :command-service:bootJar'
-                            }
-                            // Kaniko로 이미지 빌드 및 푸시
-                            container('kaniko') {
-                                sh """
-                                /kaniko/executor --context `pwd`/command-service --dockerfile `pwd`/command-service/Dockerfile --destination ${imageName}
-                                """
-                            }
-                            // Kubernetes 배포 (ServiceAccount 권한으로 실행)
+                            container('gradle') { sh './gradlew :command-service:bootJar' }
+                            container('kaniko') { sh "/kaniko/executor --context `pwd`/command-service --dockerfile `pwd`/command-service/Dockerfile --destination ${imageName}" }
                             sh "kubectl set image deployment/command-service-deployment command-service=${imageName}"
                             sh "kubectl rollout status deployment/command-service-deployment"
                         }
@@ -99,14 +83,8 @@ spec:
                     steps {
                         script {
                             def imageName = "${env.QUERY_SERVICE_IMG}:${env.GIT_COMMIT_SHORT}"
-                            container('gradle') {
-                                sh './gradlew :query-service:bootJar'
-                            }
-                            container('kaniko') {
-                                sh """
-                                /kaniko/executor --context `pwd`/query-service --dockerfile `pwd`/query-service/Dockerfile --destination ${imageName}
-                                """
-                            }
+                            container('gradle') { sh './gradlew :query-service:bootJar' }
+                            container('kaniko') { sh "/kaniko/executor --context `pwd`/query-service --dockerfile `pwd`/query-service/Dockerfile --destination ${imageName}" }
                             sh "kubectl set image deployment/query-service-deployment query-service=${imageName}"
                             sh "kubectl rollout status deployment/query-service-deployment"
                         }
@@ -117,23 +95,13 @@ spec:
                     steps {
                         script {
                             def imageName = "${env.FRONTEND_IMG}:${env.GIT_COMMIT_SHORT}"
-                            container('kaniko') {
-                                sh """
-                                /kaniko/executor --context `pwd`/todo-frontend --dockerfile `pwd`/todo-frontend/Dockerfile --destination ${imageName}
-                                """
-                            }
+                            container('kaniko') { sh "/kaniko/executor --context `pwd`/todo-frontend --dockerfile `pwd`/todo-frontend/Dockerfile --destination ${imageName}" }
                             sh "kubectl set image deployment/frontend-deployment frontend=${imageName}"
                             sh "kubectl rollout status deployment/frontend-deployment"
                         }
                     }
                 }
             }
-        }
-    }
-    
-    post {
-        always {
-            echo 'Pipeline finished.'
         }
     }
 }
