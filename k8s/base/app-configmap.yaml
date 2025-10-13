@@ -6,7 +6,7 @@ data:
   # StatefulSet Pod의 고유 주소 형식으로 변경
   MYSQL_HOST: "mysql-statefulset-0.mysql-headless-service"
   MYSQL_PORT: "3306"
-  
+
   MONGO_HOST: "mongo-statefulset-0.mongo-headless-service"
   MONGO_PORT: "27017"
   
