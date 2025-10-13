@@ -33,10 +33,35 @@ controller:
     fsGroup: 1000
 
 agent:
-  kubernetes:
-    namespace: default
-    jenkinsUrl: http://jenkins.default.svc.cluster.local:8080
-    podTemplates: {}
+  podTemplates:
+    kaniko: |
+      - name: kaniko
+        label: kaniko
+        containers:
+        - name: jnlp
+          # ✅ JDK17을 포함한 최신 inbound-agent 이미지 사용
+          image: jenkins/inbound-agent:3148.v532a_747161c5-2-jdk17
+          args: '${computer.jnlpmac} ${computer.name}'
+        - name: kaniko
+          # ✅ 셸 사용을 위해 debug 태그가 포함된 Kaniko 이미지 사용
+          image: gcr.io/kaniko-project/executor:debug
+          imagePullPolicy: Always
+          command:
+          - /bin/sh
+          - -c
+          - cat
+          ttyEnabled: true
+          # ✅ Kaniko 컨테이너에 Docker Hub 인증 Secret을 마운트
+          volumeMounts:
+            - name: docker-config
+              mountPath: /kaniko/.docker/
+        volumes:
+          - name: docker-config
+            secret:
+              secretName: dockerhub-secret # 1단계에서 만든 Secret 이름
+              items:
+                - key: .dockerconfigjson
+                  path: config.json
 
 persistence:
   enabled: true

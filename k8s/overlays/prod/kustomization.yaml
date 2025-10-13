@@ -1,19 +1,13 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-bases:
+resources:
 - ../../base
 
 namespace: prod
 
-# 이미지 태그는 나중에 Jenkins 파이프라인에서 동적으로 변경합니다.
-images:
-- name: kyla333/command-service
-  newTag: stable-v1.0.0
-- name: kyla333/query-service
-  newTag: stable-v1.0.0
-- name: kyla333/todo-frontend
-  newTag: stable-v1.0.0
-
-patchesStrategicMerge:
-- patch-replicas.yaml
+patches:
+- path: patch-command-replicas.yaml
+- path: patch-query-replicas.yaml
+- path: patch-frontend-replicas.yaml
+- path: patch-frontend-nodeport.yaml # <-- 운영환경에서는 노트포트 30080으로 지정

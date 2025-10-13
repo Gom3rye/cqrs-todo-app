@@ -7,7 +7,7 @@ spec:
   selector:
     app: frontend
   ports:
-  - protocol: TCP
+  - name: http
+    protocol: TCP
     port: 80 # 외부에서 80 포트로 접속
     targetPort: 80 # 컨테이너의 80 포트로 전달
-    nodePort: 30080 # 외부에서 노드 ip로 접근할 때 사용할 고정 포트
