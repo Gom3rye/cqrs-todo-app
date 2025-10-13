@@ -10,6 +10,7 @@ controller:
     - git
     - configuration-as-code
     - docker-workflow
+    - github
 
   serviceAccount:
     create: true
