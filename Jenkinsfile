@@ -177,7 +177,6 @@ spec:
         failure {
             echo "❌ Pipeline failed. Check logs for details."
         }
-        }
     }
 }
 
