@@ -1,4 +1,4 @@
-// Jenkinsfile (Kaniko를 사용한 안전한 CI/CD)
+// Jenkinsfile (최종 수정본)
 pipeline {
     agent {
         kubernetes {
@@ -8,11 +8,31 @@ apiVersion: v1
 kind: Pod
 spec:
   serviceAccountName: jenkins-agent
+  # ==================== 캐시 볼륨 추가 ====================
+  volumes:
+  - name: gradle-cache
+    persistentVolumeClaim:
+      claimName: gradle-cache-pvc
+  - name: kaniko-cache
+    persistentVolumeClaim:
+      claimName: kaniko-cache-pvc
+  - name: docker-config
+    secret:
+      secretName: dockerhub-secret
+      items:
+      - key: .dockerconfigjson
+        path: config.json
+  # =========================================================
   containers:
   - name: gradle
     image: gradle:8.5.0-jdk21
     command: ["sleep"]
     args: ["infinity"]
+    # ==================== Gradle 캐시 마운트 ====================
+    volumeMounts:
+    - name: gradle-cache
+      mountPath: /home/jenkins/.gradle
+    # ==========================================================
     resources:
       requests:
         memory: "1Gi"
@@ -37,6 +57,13 @@ spec:
     image: gcr.io/kaniko-project/executor:debug
     command: ["/busybox/cat"]
     tty: true
+    # ==================== Kaniko 캐시 마운트 ====================
+    volumeMounts:
+    - name: docker-config
+      mountPath: /kaniko/.docker
+    - name: kaniko-cache
+      mountPath: /cache
+    # ==========================================================
     resources:
       requests:
         memory: "512Mi"
@@ -44,17 +71,6 @@ spec:
       limits:
         memory: "1Gi"
         cpu: "1000m"
-    volumeMounts:
-    - name: docker-config
-      mountPath: /kaniko/.docker
-
-  volumes:
-  - name: docker-config
-    secret:
-      secretName: dockerhub-secret
-      items:
-      - key: .dockerconfigjson
-        path: config.json
 '''
         }
     }
@@ -84,9 +100,10 @@ spec:
                 }
             }
         }
-
+        
+        # ==================== parallel → stages (순차 실행) ====================
         stage('Build & Push Docker Images') {
-            parallel {
+            stages {
                 stage('Command Service') {
                     steps {
                         container('kaniko') {
@@ -98,7 +115,8 @@ spec:
                                     --destination=${DOCKERHUB_REPO}/command-service:${IMAGE_TAG} \
                                     --destination=${DOCKERHUB_REPO}/command-service:latest \
                                     --cache=true \
-                                    --cache-ttl=24h
+                                    --cache-ttl=24h \
+                                    --cache-dir=/cache
                                 """
                             }
                         }
@@ -116,7 +134,8 @@ spec:
                                     --destination=${DOCKERHUB_REPO}/query-service:${IMAGE_TAG} \
                                     --destination=${DOCKERHUB_REPO}/query-service:latest \
                                     --cache=true \
-                                    --cache-ttl=24h
+                                    --cache-ttl=24h \
+                                    --cache-dir=/cache
                                 """
                             }
                         }
@@ -134,7 +153,8 @@ spec:
                                     --destination=${DOCKERHUB_REPO}/todo-frontend:${IMAGE_TAG} \
                                     --destination=${DOCKERHUB_REPO}/todo-frontend:latest \
                                     --cache=true \
-                                    --cache-ttl=24h
+                                    --cache-ttl=24h \
+                                    --cache-dir=/cache
                                 """
                             }
                         }
@@ -142,6 +162,7 @@ spec:
                 }
             }
         }
+        # =======================================================================
 
         stage('Deploy to Kubernetes') {
             steps {
@@ -209,4 +230,3 @@ def findChangedServices() {
 
     return changedServices
 }
-

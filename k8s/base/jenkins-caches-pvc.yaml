@@ -1,0 +1,26 @@
+# jenkins-caches-pvc.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gradle-cache-pvc
+  namespace: jenkins # Jenkins Agent Pod가 실행될 네임스페이스
+spec:
+  storageClassName: nfs-storage
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi # Gradle 캐시용 5GB
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kaniko-cache-pvc
+  namespace: jenkins # Jenkins Agent Pod가 실행될 네임스페이스
+spec:
+  storageClassName: nfs-storage
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi # Kaniko 이미지 레이어 캐시용 10GB
