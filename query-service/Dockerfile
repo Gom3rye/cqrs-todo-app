@@ -6,7 +6,7 @@ WORKDIR /app
 
 # 3. 빌드된 JAR 파일을 컨테이너 안으로 복사하고 이름을 app.jar로 변경
 # build/libs/ 폴더 안의 어떤 이름의 jar 파일이든 app.jar로 복사됩니다.
-COPY build/libs/*.jar app.jar
-
+COPY build/libs/*.jar /app/
 # 4. 컨테이너가 시작될 때 실행할 명령어
-ENTRYPOINT ["java", "-jar", "app.jar"]
+
+CMD ["sh", "-c", "java -jar /app/*.jar"]
