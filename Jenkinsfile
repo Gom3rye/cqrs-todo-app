@@ -2,7 +2,7 @@
 pipeline {
     agent {
         kubernetes {
-	    namespace 'jenkins'
+            namespace 'jenkins'
             yaml '''
 apiVersion: v1
 kind: Pod
@@ -20,7 +20,7 @@ spec:
       limits:
         memory: "2Gi"
         cpu: "1000m"
-  
+
   - name: kubectl
     image: bitnami/kubectl:latest
     command: ["sleep"]
@@ -32,7 +32,7 @@ spec:
       limits:
         memory: "256Mi"
         cpu: "200m"
-  
+
   - name: kaniko
     image: gcr.io/kaniko-project/executor:debug
     command: ["/busybox/cat"]
@@ -47,7 +47,7 @@ spec:
     volumeMounts:
     - name: docker-config
       mountPath: /kaniko/.docker
-  
+
   volumes:
   - name: docker-config
     secret:
@@ -72,10 +72,12 @@ spec:
                         sh '''
                             echo "Building command-service..."
                             cd command-service
+                            chmod +x gradlew
                             ./gradlew clean build -x test
-                            
+
                             echo "Building query-service..."
                             cd ../query-service
+                            chmod +x gradlew
                             ./gradlew clean build -x test
                         '''
                     }
@@ -102,7 +104,7 @@ spec:
                         }
                     }
                 }
-                
+
                 stage('Query Service') {
                     steps {
                         container('kaniko') {
@@ -120,7 +122,7 @@ spec:
                         }
                     }
                 }
-                
+
                 stage('Frontend') {
                     steps {
                         container('kaniko') {
@@ -156,7 +158,7 @@ spec:
                                 sh """
                                     kubectl set image deployment/${deploymentName} \
                                     ${containerName}=${DOCKERHUB_REPO}/${service}:${IMAGE_TAG}
-                                    
+
                                     kubectl rollout status deployment/${deploymentName} --timeout=5m
                                 """
                             }
@@ -168,7 +170,7 @@ spec:
             }
         }
     }
-    
+
     post {
         success {
             echo "✅ Pipeline completed successfully!"
@@ -185,12 +187,12 @@ def findChangedServices() {
         echo "First build - deploying all services."
         return ['command-service', 'query-service', 'todo-frontend']
     }
-    
+
     def changedFiles = sh(
-        script: "git diff --name-only ${env.GIT_PREVIOUS_SUCCESSFUL_COMMIT}..${env.GIT_COMMIT}", 
+        script: "git diff --name-only ${env.GIT_PREVIOUS_SUCCESSFUL_COMMIT}..${env.GIT_COMMIT}",
         returnStdout: true
     ).trim().split('\n')
-    
+
     def services = ['command-service', 'query-service', 'todo-frontend']
     def changedServices = []
 
@@ -199,11 +201,12 @@ def findChangedServices() {
             changedServices.add(service)
         }
     }
-    
+
     if (changedFiles.any { it == 'Jenkinsfile' }) {
         echo "Jenkinsfile changed - deploying all services."
         return services
     }
-    
+
     return changedServices
 }
+
