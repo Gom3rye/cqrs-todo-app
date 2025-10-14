@@ -7,7 +7,7 @@ apiVersion: v1
 kind: Pod
 spec:
   serviceAccountName: jenkins-agent
-  # 캐시 볼륨 추가
+
   volumes:
   - name: gradle-cache
     persistentVolumeClaim:
@@ -21,59 +21,68 @@ spec:
       items:
       - key: .dockerconfigjson
         path: config.json
+  - name: workspace-volume
+    emptyDir: {}
+
   containers:
   - name: gradle
     image: gradle:8.5.0-jdk21
     command: ["sleep"]
     args: ["infinity"]
-    # Gradle 캐시 마운트
     volumeMounts:
     - name: gradle-cache
       mountPath: /home/jenkins/.gradle
+    - name: workspace-volume
+      mountPath: /home/jenkins/agent
     resources:
       requests:
-        memory: "1Gi"
         cpu: "500m"
+        memory: "1Gi"
       limits:
-        memory: "2Gi"
         cpu: "1000m"
-
-  - name: kubectl
-    image: bitnami/kubectl:latest
-    command: ["sleep"]
-    args: ["infinity"]
-    resources:
-      requests:
-        memory: "128Mi"
-        cpu: "100m"
-      limits:
-        memory: "256Mi"
-        cpu: "200m"
+        memory: "2Gi"
 
   - name: kaniko
     image: gcr.io/kaniko-project/executor:debug
     command: ["/busybox/cat"]
     tty: true
-    # Kaniko 캐시 마운트
     volumeMounts:
     - name: docker-config
       mountPath: /kaniko/.docker
     - name: kaniko-cache
       mountPath: /cache
+    - name: workspace-volume
+      mountPath: /home/jenkins/agent
     resources:
       requests:
-        memory: "512Mi"
         cpu: "500m"
+        memory: "512Mi"
       limits:
-        memory: "1Gi"
         cpu: "1000m"
+        memory: "1Gi"
+
+  - name: kubectl
+    image: lachlanevenson/k8s-kubectl:v1.30.0
+    command: ["sleep"]
+    args: ["infinity"]
+    volumeMounts:
+    - name: workspace-volume
+      mountPath: /home/jenkins/agent
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+      limits:
+        cpu: "200m"
+        memory: "256Mi"
 '''
         }
     }
 
     environment {
-        IMAGE_TAG = "${env.GIT_COMMIT?.take(7) ?: 'latest'}"
         DOCKERHUB_REPO = "kyla333"
+        IMAGE_TAG = "${env.GIT_COMMIT?.take(7) ?: 'latest'}"
+        DEPLOY_NAMESPACE = "prod"
     }
 
     stages {
@@ -82,12 +91,12 @@ spec:
                 container('gradle') {
                     script {
                         sh '''
-                            echo "Building command-service..."
+                            echo "🚀 Building command-service..."
                             cd command-service
                             chmod +x gradlew
                             ./gradlew clean build -x test
 
-                            echo "Building query-service..."
+                            echo "🚀 Building query-service..."
                             cd ../query-service
                             chmod +x gradlew
                             ./gradlew clean build -x test
@@ -98,7 +107,7 @@ spec:
         }
 
         stage('Build & Push Docker Images') {
-            stages {
+            parallel {
                 stage('Command Service') {
                     steps {
                         container('kaniko') {
@@ -108,9 +117,7 @@ spec:
                                 --dockerfile=\${WORKSPACE}/command-service/Dockerfile \
                                 --destination=${DOCKERHUB_REPO}/command-service:${IMAGE_TAG} \
                                 --destination=${DOCKERHUB_REPO}/command-service:latest \
-                                --cache=true \
-                                --cache-ttl=24h \
-                                --cache-dir=/cache
+                                --cache=true --cache-ttl=24h --cache-dir=/cache
                             """
                         }
                     }
@@ -125,9 +132,7 @@ spec:
                                 --dockerfile=\${WORKSPACE}/query-service/Dockerfile \
                                 --destination=${DOCKERHUB_REPO}/query-service:${IMAGE_TAG} \
                                 --destination=${DOCKERHUB_REPO}/query-service:latest \
-                                --cache=true \
-                                --cache-ttl=24h \
-                                --cache-dir=/cache
+                                --cache=true --cache-ttl=24h --cache-dir=/cache
                             """
                         }
                     }
@@ -142,9 +147,7 @@ spec:
                                 --dockerfile=\${WORKSPACE}/todo-frontend/Dockerfile \
                                 --destination=${DOCKERHUB_REPO}/todo-frontend:${IMAGE_TAG} \
                                 --destination=${DOCKERHUB_REPO}/todo-frontend:latest \
-                                --cache=true \
-                                --cache-ttl=24h \
-                                --cache-dir=/cache
+                                --cache=true --cache-ttl=24h --cache-dir=/cache
                             """
                         }
                     }
@@ -158,23 +161,19 @@ spec:
                     script {
                         def changedServices = findChangedServices()
                         if (changedServices) {
-                            echo "Deploying changed services: ${changedServices}"
+                            echo "🚀 Deploying changed services: ${changedServices.join(', ')}"
                             changedServices.each { service ->
                                 def deploymentName = (service == 'todo-frontend') ? 'frontend-deployment' : "${service}-deployment"
                                 def containerName = (service == 'todo-frontend') ? 'frontend' : service
 
                                 sh """
-                                    kubectl set image deployment/${deploymentName} \
-                                    ${containerName}=${DOCKERHUB_REPO}/${service}:${IMAGE_TAG} \
-                                    -n \$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
-
-                                    kubectl rollout status deployment/${deploymentName} \
-                                    -n \$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace) \
-                                    --timeout=5m
+                                    echo "🔄 Updating image for ${deploymentName}..."
+                                    kubectl set image deployment/${deploymentName} ${containerName}=${DOCKERHUB_REPO}/${service}:${IMAGE_TAG} -n ${DEPLOY_NAMESPACE} && \
+                                    kubectl rollout status deployment/${deploymentName} -n ${DEPLOY_NAMESPACE} --timeout=5m
                                 """
                             }
                         } else {
-                            echo "No application services changed. Skipping deployment."
+                            echo "ℹ️ No application code changed. Skipping deployment."
                         }
                     }
                 }
@@ -185,17 +184,18 @@ spec:
     post {
         success {
             echo "✅ Pipeline completed successfully!"
-            echo "📦 Images pushed with tag: ${IMAGE_TAG}"
+            echo "📦 Docker Images tagged: ${IMAGE_TAG}"
         }
         failure {
-            echo "❌ Pipeline failed. Check logs for details."
+            echo "❌ Pipeline failed. Check stage logs above."
         }
     }
 }
 
+// 🔍 함수: 어떤 서비스가 바뀌었는지 탐지
 def findChangedServices() {
     if (!env.GIT_PREVIOUS_SUCCESSFUL_COMMIT) {
-        echo "First build - deploying all services."
+        echo "🆕 First build detected — deploying all services."
         return ['command-service', 'query-service', 'todo-frontend']
     }
 
@@ -205,16 +205,12 @@ def findChangedServices() {
     ).trim().split('\n').findAll { it }
 
     def services = ['command-service', 'query-service', 'todo-frontend']
-    def changedServices = []
-
-    for (service in services) {
-        if (changedFiles.any { it.startsWith(service + '/') }) {
-            changedServices.add(service)
-        }
+    def changedServices = services.findAll { service ->
+        changedFiles.any { it.startsWith("${service}/") }
     }
 
     if (changedFiles.any { it == 'Jenkinsfile' }) {
-        echo "Jenkinsfile changed - deploying all services."
+        echo "⚙️ Jenkinsfile changed — deploying all services."
         return services
     }
 
