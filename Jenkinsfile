@@ -2,6 +2,7 @@
 pipeline {
     agent {
         kubernetes {
+	    namespace 'jenkins'
             yaml '''
 apiVersion: v1
 kind: Pod
@@ -176,9 +177,6 @@ spec:
         failure {
             echo "❌ Pipeline failed. Check logs for details."
         }
-        always {
-            echo "🧹 Cleaning up workspace..."
-            cleanWs()
         }
     }
 }

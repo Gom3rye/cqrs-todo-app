@@ -2,13 +2,13 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: jenkins-agent
-  namespace: default
+  namespace: jenkins
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: jenkins-agent-role
-  namespace: default
+  namespace: jenkins
 rules:
 - apiGroups: ["", "apps"]
   resources: ["pods", "deployments", "services", "configmaps"]
@@ -21,11 +21,11 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: jenkins-agent-binding
-  namespace: default
+  namespace: jenkins
 subjects:
 - kind: ServiceAccount
   name: jenkins-agent
-  namespace: default
+  namespace: jenkins
 roleRef:
   kind: Role
   name: jenkins-agent-role
