@@ -1,21 +1,22 @@
-# jenkins-values.yaml
 controller:
   serviceType: NodePort
   servicePort: 8080
   nodePort: 32000
-  
+
   installPlugins:
-    - kubernetes
-    - workflow-aggregator
-    - git
-    - configuration-as-code
-    - docker-workflow
-    - github
+    - kubernetes:latest
+    - workflow-aggregator:latest
+    - git:latest
+    - configuration-as-code:latest
 
-  serviceAccount:
-    create: true
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "256Mi"
+    limits:
+      cpu: "2000m"
+      memory: "4Gi"
 
-  # 플러그인 다운로드 미러 사이트를 공식 서버로 강제하여 네트워크 문제를 해결합니다.
   containerEnv:
     - name: JENKINS_UC
       value: https://updates.jenkins.io/update-center.json
@@ -24,51 +25,11 @@ controller:
     - name: JENKINS_INCREMENTALS_REPO_MIRROR
       value: https://repo.jenkins-ci.org/incrementals
 
-  containerSecurityContext:
-    runAsUser: 1000
-    runAsGroup: 1000
-    fsGroup: 1000
-    
-  podSecurityContext:
-    fsGroup: 1000
-
 agent:
-  podTemplates:
-    kaniko: |
-      - name: kaniko
-        label: kaniko
-        containers:
-        - name: jnlp
-          # ✅ JDK17을 포함한 최신 inbound-agent 이미지 사용
-          image: jenkins/inbound-agent:3148.v532a_747161c5-2-jdk17
-          args: '${computer.jnlpmac} ${computer.name}'
-        - name: kaniko
-          # ✅ 셸 사용을 위해 debug 태그가 포함된 Kaniko 이미지 사용
-          image: gcr.io/kaniko-project/executor:debug
-          imagePullPolicy: Always
-          command:
-          - /bin/sh
-          - -c
-          - cat
-          ttyEnabled: true
-          # ✅ Kaniko 컨테이너에 Docker Hub 인증 Secret을 마운트
-          volumeMounts:
-            - name: docker-config
-              mountPath: /kaniko/.docker/
-        volumes:
-          - name: docker-config
-            secret:
-              secretName: dockerhub-secret # 1단계에서 만든 Secret 이름
-              items:
-                - key: .dockerconfigjson
-                  path: config.json
+  enabled: false
 
 persistence:
   enabled: true
   storageClass: "nfs-storage"
   size: "8Gi"
   accessMode: ReadWriteOnce
-  annotations: {}
-  labels: {}
-  securityContext:
-    enabled: false

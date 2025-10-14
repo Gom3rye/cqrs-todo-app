@@ -1,63 +1,138 @@
-// cqrs-todo-app/Jenkinsfile (Kaniko 버전)
-
+// Jenkinsfile (Kaniko를 사용한 안전한 CI/CD)
 pipeline {
-    // ✅ agent를 'kaniko' Pod Template으로 지정
     agent {
-        label 'kaniko'
+        kubernetes {
+            yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  serviceAccountName: jenkins-agent
+  containers:
+  - name: gradle
+    image: gradle:8.5.0-jdk21
+    command: ["sleep"]
+    args: ["infinity"]
+    resources:
+      requests:
+        memory: "1Gi"
+        cpu: "500m"
+      limits:
+        memory: "2Gi"
+        cpu: "1000m"
+  
+  - name: kubectl
+    image: bitnami/kubectl:latest
+    command: ["sleep"]
+    args: ["infinity"]
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
+      limits:
+        memory: "256Mi"
+        cpu: "200m"
+  
+  - name: kaniko
+    image: gcr.io/kaniko-project/executor:debug
+    command: ["/busybox/cat"]
+    tty: true
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "500m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+    volumeMounts:
+    - name: docker-config
+      mountPath: /kaniko/.docker
+  
+  volumes:
+  - name: docker-config
+    secret:
+      secretName: dockerhub-secret
+      items:
+      - key: .dockerconfigjson
+        path: config.json
+'''
+        }
     }
 
     environment {
-        REPO_NAME = "kyla333" // DockerHub 사용자 이름
-        IMAGE_TAG = "build-${BUILD_NUMBER}"
+        IMAGE_TAG = "${env.GIT_COMMIT?.take(7) ?: 'latest'}"
+        DOCKERHUB_REPO = "kyla333"
     }
 
     stages {
-        stage('Checkout') {
+        stage('Build Backend JARs') {
             steps {
-                echo 'Checking out source code...'
-                checkout scm
+                container('gradle') {
+                    script {
+                        sh '''
+                            echo "Building command-service..."
+                            cd command-service
+                            ./gradlew clean build -x test
+                            
+                            echo "Building query-service..."
+                            cd ../query-service
+                            ./gradlew clean build -x test
+                        '''
+                    }
+                }
             }
         }
 
-        stage('Build & Push Images') {
+        stage('Build & Push Docker Images') {
             parallel {
                 stage('Command Service') {
                     steps {
-                        script {
-                            buildAndPushImage('command-service')
+                        container('kaniko') {
+                            script {
+                                sh """
+                                    /kaniko/executor \
+                                    --context=\${WORKSPACE}/command-service \
+                                    --dockerfile=\${WORKSPACE}/command-service/Dockerfile \
+                                    --destination=${DOCKERHUB_REPO}/command-service:${IMAGE_TAG} \
+                                    --destination=${DOCKERHUB_REPO}/command-service:latest \
+                                    --cache=true \
+                                    --cache-ttl=24h
+                                """
+                            }
                         }
                     }
                 }
+                
                 stage('Query Service') {
                     steps {
-                        script {
-                            buildAndPushImage('query-service')
+                        container('kaniko') {
+                            script {
+                                sh """
+                                    /kaniko/executor \
+                                    --context=\${WORKSPACE}/query-service \
+                                    --dockerfile=\${WORKSPACE}/query-service/Dockerfile \
+                                    --destination=${DOCKERHUB_REPO}/query-service:${IMAGE_TAG} \
+                                    --destination=${DOCKERHUB_REPO}/query-service:latest \
+                                    --cache=true \
+                                    --cache-ttl=24h
+                                """
+                            }
                         }
                     }
                 }
-                stage('Frontend Service') {
+                
+                stage('Frontend') {
                     steps {
-                        script {
-                            buildAndPushImage('todo-frontend')
-                        }
-                    }
-                }
-            }
-        }
-
-        // Deploy 단계
-        stage('Deploy to Dev') {
-            steps {
-                // jnlp 컨테이너에서 kubectl 명령어 실행
-                container('jnlp') {
-                    script {
-                        echo "Deploying to Development environment..."
-                        withKubeconfig([credentialsId: 'kubeconfig']) {
-                            dir('k8s') {
-                                sh "kustomize edit set image kyla333/command-service=${REPO_NAME}/command-service:${IMAGE_TAG}"
-                                sh "kustomize edit set image kyla333/query-service=${REPO_NAME}/query-service:${IMAGE_TAG}"
-                                sh "kustomize edit set image kyla333/todo-frontend=${REPO_NAME}/todo-frontend:${IMAGE_TAG}"
-                                sh "kustomize build overlays/dev | kubectl apply -f -"
+                        container('kaniko') {
+                            script {
+                                sh """
+                                    /kaniko/executor \
+                                    --context=\${WORKSPACE}/todo-frontend \
+                                    --dockerfile=\${WORKSPACE}/todo-frontend/Dockerfile \
+                                    --destination=${DOCKERHUB_REPO}/todo-frontend:${IMAGE_TAG} \
+                                    --destination=${DOCKERHUB_REPO}/todo-frontend:latest \
+                                    --cache=true \
+                                    --cache-ttl=24h
+                                """
                             }
                         }
                     }
@@ -65,58 +140,73 @@ pipeline {
             }
         }
 
-        stage('Approval Gate') {
+        stage('Deploy to Kubernetes') {
             steps {
-                input message: 'Deploy to Production?', submitter: 'admin'
-            }
-        }
-
-        stage('Deploy to Prod') {
-            steps {
-                container('jnlp') {
+                container('kubectl') {
                     script {
-                        echo "Deploying to Production environment..."
-                        withKubeconfig([credentialsId: 'kubeconfig']) {
-                            dir('k8s') {
-                                sh "kustomize edit set image kyla333/command-service=${REPO_NAME}/command-service:${IMAGE_TAG}"
-                                sh "kustomize edit set image kyla333/query-service=${REPO_NAME}/query-service:${IMAGE_TAG}"
-                                sh "kustomize edit set image kyla333/todo-frontend=${REPO_NAME}/todo-frontend:${IMAGE_TAG}"
-                                sh "kustomize build overlays/prod | kubectl apply -f -"
+                        def changedServices = findChangedServices()
+                        if (changedServices) {
+                            echo "Deploying changed services: ${changedServices}"
+                            changedServices.each { service ->
+                                echo "Updating deployment for ${service}..."
+                                def deploymentName = (service == 'todo-frontend') ? 'frontend-deployment' : "${service}-deployment"
+                                def containerName = (service == 'todo-frontend') ? 'frontend' : service
+
+                                sh """
+                                    kubectl set image deployment/${deploymentName} \
+                                    ${containerName}=${DOCKERHUB_REPO}/${service}:${IMAGE_TAG}
+                                    
+                                    kubectl rollout status deployment/${deploymentName} --timeout=5m
+                                """
                             }
+                        } else {
+                            echo "No application services changed. Skipping deployment."
                         }
                     }
                 }
             }
         }
     }
-
+    
     post {
+        success {
+            echo "✅ Pipeline completed successfully!"
+            echo "📦 Images pushed with tag: ${IMAGE_TAG}"
+        }
+        failure {
+            echo "❌ Pipeline failed. Check logs for details."
+        }
         always {
-            echo 'Pipeline finished.'
+            echo "🧹 Cleaning up workspace..."
             cleanWs()
         }
     }
 }
 
-// ✅ Kaniko를 사용하도록 수정한 빌드/푸시 함수
-def buildAndPushImage(String serviceName) {
-    // kaniko 컨테이너에서 빌드 명령어 실행
-    container('kaniko') {
-        dir(serviceName) {
-            // 백엔드 프로젝트인 경우에만 gradle 빌드 실행
-            if (serviceName.contains('service')) {
-                // jnlp 컨테이너에서 gradle 빌드 실행
-                container('jnlp') {
-                    echo "Building ${serviceName} with Gradle..."
-                    sh 'chmod +x ./gradlew'
-                    sh './gradlew build'
-                }
-            }
-            
-            echo "Building Docker image for ${serviceName} with Kaniko..."
-            def imageName = "${REPO_NAME}/${serviceName}:${IMAGE_TAG}"
-            // Kaniko executor 실행
-            sh "/kaniko/executor --dockerfile=`pwd`/Dockerfile --context=dir://`pwd` --destination=${imageName}"
+def findChangedServices() {
+    if (!env.GIT_PREVIOUS_SUCCESSFUL_COMMIT) {
+        echo "First build - deploying all services."
+        return ['command-service', 'query-service', 'todo-frontend']
+    }
+    
+    def changedFiles = sh(
+        script: "git diff --name-only ${env.GIT_PREVIOUS_SUCCESSFUL_COMMIT}..${env.GIT_COMMIT}", 
+        returnStdout: true
+    ).trim().split('\n')
+    
+    def services = ['command-service', 'query-service', 'todo-frontend']
+    def changedServices = []
+
+    for (service in services) {
+        if (changedFiles.any { it.startsWith(service + '/') }) {
+            changedServices.add(service)
         }
     }
+    
+    if (changedFiles.any { it == 'Jenkinsfile' }) {
+        echo "Jenkinsfile changed - deploying all services."
+        return services
+    }
+    
+    return changedServices
 }
