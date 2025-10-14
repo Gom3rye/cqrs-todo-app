@@ -1,4 +1,4 @@
-// Jenkinsfile (최종 수정본)
+// Jenkinsfile (주석 수정 최종본)
 pipeline {
     agent {
         kubernetes {
@@ -8,7 +8,7 @@ apiVersion: v1
 kind: Pod
 spec:
   serviceAccountName: jenkins-agent
-  # ==================== 캐시 볼륨 추가 ====================
+  // 캐시 볼륨 추가
   volumes:
   - name: gradle-cache
     persistentVolumeClaim:
@@ -22,17 +22,15 @@ spec:
       items:
       - key: .dockerconfigjson
         path: config.json
-  # =========================================================
   containers:
   - name: gradle
     image: gradle:8.5.0-jdk21
     command: ["sleep"]
     args: ["infinity"]
-    # ==================== Gradle 캐시 마운트 ====================
+    // Gradle 캐시 마운트
     volumeMounts:
     - name: gradle-cache
       mountPath: /home/jenkins/.gradle
-    # ==========================================================
     resources:
       requests:
         memory: "1Gi"
@@ -57,13 +55,12 @@ spec:
     image: gcr.io/kaniko-project/executor:debug
     command: ["/busybox/cat"]
     tty: true
-    # ==================== Kaniko 캐시 마운트 ====================
+    // Kaniko 캐시 마운트
     volumeMounts:
     - name: docker-config
       mountPath: /kaniko/.docker
     - name: kaniko-cache
       mountPath: /cache
-    # ==========================================================
     resources:
       requests:
         memory: "512Mi"
@@ -101,7 +98,7 @@ spec:
             }
         }
         
-        # ==================== parallel → stages (순차 실행) ====================
+        // parallel → stages (순차 실행)
         stage('Build & Push Docker Images') {
             stages {
                 stage('Command Service') {
@@ -162,7 +159,6 @@ spec:
                 }
             }
         }
-        # =======================================================================
 
         stage('Deploy to Kubernetes') {
             steps {
@@ -178,9 +174,12 @@ spec:
 
                                 sh """
                                     kubectl set image deployment/${deploymentName} \
-                                    ${containerName}=${DOCKERHUB_REPO}/${service}:${IMAGE_TAG}
+                                    ${containerName}=${DOCKERHUB_REPO}/${service}:${IMAGE_TAG} \
+                                    -n \$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
 
-                                    kubectl rollout status deployment/${deploymentName} --timeout=5m
+                                    kubectl rollout status deployment/${deploymentName} \
+                                    -n \$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace) \
+                                    --timeout=5m
                                 """
                             }
                         } else {
