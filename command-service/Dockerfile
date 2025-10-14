@@ -8,6 +8,7 @@ WORKDIR /app
 # build/libs/ 폴더 안의 어떤 이름의 jar 파일이든 app.jar로 복사됩니다.
 COPY build/libs/*.jar /app/
 # 4. 컨테이너가 시작될 때 실행할 명령어
-
+# jar 이름이 바뀌어도 실행 가능하도록 와일드카드 실행
 CMD ["sh", "-c", "java -jar /app/*.jar"]
+
 
