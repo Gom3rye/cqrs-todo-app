@@ -37,8 +37,8 @@ spec:
 
   - name: kaniko
     image: gcr.io/kaniko-project/executor:v1.23.2
-    command: ["sleep"]
-    args: ["infinity"]
+    command: ["/busybox/sh"]
+    args: ["-c", "tail -f /dev/null"]
     volumeMounts:
     - name: docker-config
       mountPath: /kaniko/.docker
@@ -83,7 +83,7 @@ spec:
         }
 
         stage('Build Backend JARs') {
-            when { expression { !env.skipRemainingStages && env.CHANGED_SERVICES.contains('command-service') || env.CHANGED_SERVICES.contains('query-service') } }
+            when { expression { !env.skipRemainingStages && (env.CHANGED_SERVICES.contains('command-service') || env.CHANGED_SERVICES.contains('query-service')) } }
             steps {
                 container('gradle') {
                     script {
@@ -185,7 +185,7 @@ spec:
 
     post {
         success {
-            echo "✅ Smart CI/CD completed successfully!"
+            echo "✅ Smart CI/CD pipeline completed successfully!"
         }
         failure {
             echo "❌ Pipeline failed. Check logs above."
@@ -193,7 +193,6 @@ spec:
     }
 }
 
-/** Smart CI/CD Git diff 로직 */
 def detectChangedServices() {
     if (!env.GIT_PREVIOUS_SUCCESSFUL_COMMIT) {
         echo "🆕 First build detected — deploying all services"
@@ -211,10 +210,10 @@ def detectChangedServices() {
     }
 
     def files = changedFiles.split('\n')
-    def targets = ['command-service', 'query-service', 'todo-frontend']
+    def services = ['command-service', 'query-service', 'todo-frontend']
     def changed = []
 
-    targets.each { svc ->
+    services.each { svc ->
         if (files.any { it.startsWith("${svc}/") }) {
             changed << svc
         }
