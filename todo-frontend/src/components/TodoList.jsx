@@ -51,7 +51,7 @@ const TodoList = () => {
 
   return (
     <div className="todo-container">
-      <h2>📝 할 일 목록</h2>
+      <h2>📝 Todo List</h2>
       <div className="todo-input">
         <input
           type="text"
@@ -85,5 +85,6 @@ const TodoList = () => {
     </div>
   );
 };
+
 
 export default TodoList;
