@@ -47,9 +47,9 @@ spec:
     - name: workspace-volume
       mountPath: /home/jenkins/agent
 
-  # ✅ 여기 변경됨
+  # ✅ 확실히 존재하는 kubectl 이미지
   - name: kubectl
-    image: bitnami/kubectl:1.30.2
+    image: dtzar/helm-kubectl:3.15.0
     command: ["sleep"]
     args: ["infinity"]
     volumeMounts:
@@ -66,6 +66,7 @@ spec:
     }
 
     stages {
+
         stage('Build Backend JARs') {
             steps {
                 container('gradle') {
