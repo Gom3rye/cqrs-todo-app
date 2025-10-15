@@ -7,40 +7,11 @@ apiVersion: v1
 kind: Pod
 spec:
   serviceAccountName: jenkins-agent
-
-  volumes:
-  - name: gradle-cache
-    persistentVolumeClaim:
-      claimName: gradle-cache-pvc
-  - name: kaniko-cache
-    persistentVolumeClaim:
-      claimName: kaniko-cache-pvc
-  - name: docker-config
-    secret:
-      secretName: dockerhub-secret
-      items:
-      - key: .dockerconfigjson
-        path: config.json
-
   containers:
   - name: gradle
     image: gradle:8.5.0-jdk21
     command: ["sleep"]
     args: ["infinity"]
-    volumeMounts:
-    - name: gradle-cache
-      mountPath: /home/jenkins/.gradle
-
-  - name: kaniko
-    image: gcr.io/kaniko-project/executor:v1.23.2
-    tty: true
-    volumeMounts:
-    - name: docker-config
-      mountPath: /kaniko/.docker
-      readOnly: true
-    - name: kaniko-cache
-      mountPath: /cache
-
   - name: kubectl
     image: dtzar/helm-kubectl:3.15.0
     command: ["sleep"]
@@ -56,6 +27,7 @@ spec:
     }
 
     stages {
+
         stage('Detect Changes') {
             steps {
                 script {
@@ -71,14 +43,13 @@ spec:
             }
         }
 
-        stage('Build Backend JARs') {
+        stage('Build JARs') {
             when { expression { !env.skipRemainingStages && (env.CHANGED_SERVICES.contains('command-service') || env.CHANGED_SERVICES.contains('query-service')) } }
             steps {
                 container('gradle') {
                     script {
                         if (env.CHANGED_SERVICES.contains('command-service')) {
                             sh '''
-                                echo "🚀 Building command-service..."
                                 cd command-service
                                 chmod +x gradlew
                                 ./gradlew clean build -x test
@@ -86,7 +57,6 @@ spec:
                         }
                         if (env.CHANGED_SERVICES.contains('query-service')) {
                             sh '''
-                                echo "🚀 Building query-service..."
                                 cd query-service
                                 chmod +x gradlew
                                 ./gradlew clean build -x test
@@ -97,59 +67,55 @@ spec:
             }
         }
 
-        stage('Build & Push Docker Images') {
+        stage('Build & Push Images') {
             when { expression { !env.skipRemainingStages } }
-            parallel {
-                stage('Command Service') {
-                    when { expression { env.CHANGED_SERVICES.contains('command-service') } }
-                    steps {
-                        container('kaniko') {
-                            sh """
-                                /kaniko/executor \
-                                  --context=${WORKSPACE}/command-service \
-                                  --dockerfile=${WORKSPACE}/command-service/Dockerfile \
-                                  --destination=${DOCKERHUB_REPO}/command-service:${IMAGE_TAG} \
-                                  --destination=${DOCKERHUB_REPO}/command-service:latest \
-                                  --cache=true \
-                                  --cache-dir=/cache \
-                                  --cache-ttl=24h
-                            """
-                        }
-                    }
-                }
+            steps {
+                container('kubectl') {
+                    script {
+                        def services = env.CHANGED_SERVICES.split(',')
+                        services.each { svc ->
+                            echo "🛠 Building ${svc} with Kaniko..."
 
-                stage('Query Service') {
-                    when { expression { env.CHANGED_SERVICES.contains('query-service') } }
-                    steps {
-                        container('kaniko') {
+                            // Kaniko를 별도 Pod로 실행
                             sh """
-                                /kaniko/executor \
-                                  --context=${WORKSPACE}/query-service \
-                                  --dockerfile=${WORKSPACE}/query-service/Dockerfile \
-                                  --destination=${DOCKERHUB_REPO}/query-service:${IMAGE_TAG} \
-                                  --destination=${DOCKERHUB_REPO}/query-service:latest \
-                                  --cache=true \
-                                  --cache-dir=/cache \
-                                  --cache-ttl=24h
+                            kubectl delete pod kaniko-${svc} -n jenkins --ignore-not-found
+                            kubectl run kaniko-${svc} -n jenkins --restart=Never \
+                              --serviceaccount=jenkins-agent \
+                              --image=gcr.io/kaniko-project/executor:v1.23.2 \
+                              --overrides='
+                              {
+                                "spec": {
+                                  "containers": [{
+                                    "name": "kaniko",
+                                    "image": "gcr.io/kaniko-project/executor:v1.23.2",
+                                    "args": [
+                                      "--context=git://github.com/Gom3rye/cqrs-todo-app.git#${env.GIT_COMMIT}:/workspace/${svc}",
+                                      "--dockerfile=/workspace/${svc}/Dockerfile",
+                                      "--destination=${DOCKERHUB_REPO}/${svc}:${IMAGE_TAG}",
+                                      "--destination=${DOCKERHUB_REPO}/${svc}:latest",
+                                      "--cache=true",
+                                      "--cache-ttl=24h"
+                                    ],
+                                    "volumeMounts": [{
+                                      "name": "docker-config",
+                                      "mountPath": "/kaniko/.docker",
+                                      "readOnly": true
+                                    }]
+                                  }],
+                                  "volumes": [{
+                                    "name": "docker-config",
+                                    "secret": {
+                                      "secretName": "dockerhub-secret"
+                                    }
+                                  }]
+                                }
+                              }'
                             """
-                        }
-                    }
-                }
 
-                stage('Frontend') {
-                    when { expression { env.CHANGED_SERVICES.contains('todo-frontend') } }
-                    steps {
-                        container('kaniko') {
-                            sh """
-                                /kaniko/executor \
-                                  --context=${WORKSPACE}/todo-frontend \
-                                  --dockerfile=${WORKSPACE}/todo-frontend/Dockerfile \
-                                  --destination=${DOCKERHUB_REPO}/todo-frontend:${IMAGE_TAG} \
-                                  --destination=${DOCKERHUB_REPO}/todo-frontend:latest \
-                                  --cache=true \
-                                  --cache-dir=/cache \
-                                  --cache-ttl=24h
-                            """
+                            // Kaniko Pod가 끝날 때까지 기다림
+                            sh "kubectl wait --for=condition=Ready=false pod/kaniko-${svc} -n jenkins --timeout=600s || true"
+                            sh "kubectl logs pod/kaniko-${svc} -n jenkins || true"
+                            sh "kubectl delete pod/kaniko-${svc} -n jenkins --ignore-not-found"
                         }
                     }
                 }
@@ -162,7 +128,7 @@ spec:
                 container('kubectl') {
                     script {
                         def services = env.CHANGED_SERVICES.split(',')
-                        echo "🚀 Deploying changed services to prod: ${services.join(', ')}"
+                        echo "🚀 Deploying changed services: ${services.join(', ')}"
 
                         services.each { svc ->
                             def depName = (svc == 'todo-frontend') ? 'frontend-deployment' : "${svc}-deployment"
