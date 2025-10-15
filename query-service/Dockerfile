@@ -1,11 +1,15 @@
-# 1. Java 21 JRE 기반의 경량 이미지 사용
+# ---- build stage ----
+FROM gradle:8.5.0-jdk21 AS builder
+WORKDIR /workspace
+COPY . .
+# gradlew가 있다면 권한 부여 후 wrapper 사용해도 됩니다
+# RUN chmod +x gradlew && ./gradlew clean bootJar -x test
+RUN gradle clean bootJar -x test
+
+# ---- runtime stage ----
 FROM eclipse-temurin:21-jre-jammy
-
-# 2. 작업 디렉토리 설정
 WORKDIR /app
-
-# 3. 고정된 이름의 JAR 파일 복사
-COPY build/libs/app.jar /app/app.jar
-
-# 4. 애플리케이션 실행
-CMD ["java", "-jar", "/app/app.jar"]
+# 빌드 결과 복사 (Spring Boot fat jar)
+COPY --from=builder /workspace/build/libs/*.jar /app/app.jar
+EXPOSE 8080
+ENTRYPOINT ["java","-jar","/app/app.jar"]
