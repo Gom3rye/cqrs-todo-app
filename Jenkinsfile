@@ -36,20 +36,17 @@ spec:
       mountPath: /home/jenkins/agent
 
   - name: kaniko
-    image: gcr.io/kaniko-project/executor:debug
-    command: ["/busybox/sh"]
-    args: ["-c", "cp /kaniko/.docker/config.json /kaniko-docker/config.json && sleep infinity"]
-    tty: true
+    image: gcr.io/kaniko-project/executor:v1.23.2
+    command: ["sleep"]
+    args: ["infinity"]
     volumeMounts:
     - name: docker-config
       mountPath: /kaniko/.docker
-      readOnly: false    # ✅ 수정 포인트
+      readOnly: true
     - name: kaniko-cache
       mountPath: /cache
     - name: workspace-volume
       mountPath: /home/jenkins/agent
-    - name: workspace-volume
-      mountPath: /kaniko-docker     # ✅ 복제 경로 추가
 
   - name: kubectl
     image: dtzar/helm-kubectl:3.15.0
@@ -70,69 +67,93 @@ spec:
 
     stages {
 
+        stage('Detect Changes') {
+            steps {
+                script {
+                    env.CHANGED_SERVICES = detectChangedServices()
+                    if (!env.CHANGED_SERVICES) {
+                        echo "ℹ️ No service changes detected — skipping build & deploy."
+                        currentBuild.result = 'SUCCESS'
+                        skipRemainingStages = true
+                    } else {
+                        echo "🔍 Changed services: ${env.CHANGED_SERVICES}"
+                    }
+                }
+            }
+        }
+
         stage('Build Backend JARs') {
+            when { expression { !env.skipRemainingStages && env.CHANGED_SERVICES.contains('command-service') || env.CHANGED_SERVICES.contains('query-service') } }
             steps {
                 container('gradle') {
-                    sh '''
-                        echo "🚀 Building command-service..."
-                        cd command-service
-                        chmod +x gradlew
-                        ./gradlew clean build -x test
-
-                        echo "🚀 Building query-service..."
-                        cd ../query-service
-                        chmod +x gradlew
-                        ./gradlew clean build -x test
-                    '''
+                    script {
+                        if (env.CHANGED_SERVICES.contains('command-service')) {
+                            sh '''
+                                echo "🚀 Building command-service..."
+                                cd command-service
+                                chmod +x gradlew
+                                ./gradlew clean build -x test
+                            '''
+                        }
+                        if (env.CHANGED_SERVICES.contains('query-service')) {
+                            sh '''
+                                echo "🚀 Building query-service..."
+                                cd query-service
+                                chmod +x gradlew
+                                ./gradlew clean build -x test
+                            '''
+                        }
+                    }
                 }
             }
         }
 
         stage('Build & Push Docker Images') {
+            when { expression { !env.skipRemainingStages } }
             parallel {
                 stage('Command Service') {
+                    when { expression { env.CHANGED_SERVICES.contains('command-service') } }
                     steps {
                         container('kaniko') {
                             sh """
                                 /kaniko/executor \
-                                  --context=\${WORKSPACE}/command-service \
-                                  --dockerfile=\${WORKSPACE}/command-service/Dockerfile \
+                                  --context=${WORKSPACE}/command-service \
+                                  --dockerfile=${WORKSPACE}/command-service/Dockerfile \
                                   --destination=${DOCKERHUB_REPO}/command-service:${IMAGE_TAG} \
                                   --destination=${DOCKERHUB_REPO}/command-service:latest \
-                                  --docker-config=/kaniko-docker \
-                                  --cache=true --cache-ttl=24h --cache-dir=/cache
+                                  --cache=true --cache-dir=/cache --cache-ttl=24h
                             """
                         }
                     }
                 }
 
                 stage('Query Service') {
+                    when { expression { env.CHANGED_SERVICES.contains('query-service') } }
                     steps {
                         container('kaniko') {
                             sh """
                                 /kaniko/executor \
-                                  --context=\${WORKSPACE}/query-service \
-                                  --dockerfile=\${WORKSPACE}/query-service/Dockerfile \
+                                  --context=${WORKSPACE}/query-service \
+                                  --dockerfile=${WORKSPACE}/query-service/Dockerfile \
                                   --destination=${DOCKERHUB_REPO}/query-service:${IMAGE_TAG} \
                                   --destination=${DOCKERHUB_REPO}/query-service:latest \
-                                  --docker-config=/kaniko-docker \
-                                  --cache=true --cache-ttl=24h --cache-dir=/cache
+                                  --cache=true --cache-dir=/cache --cache-ttl=24h
                             """
                         }
                     }
                 }
 
                 stage('Frontend') {
+                    when { expression { env.CHANGED_SERVICES.contains('todo-frontend') } }
                     steps {
                         container('kaniko') {
                             sh """
                                 /kaniko/executor \
-                                  --context=\${WORKSPACE}/todo-frontend \
-                                  --dockerfile=\${WORKSPACE}/todo-frontend/Dockerfile \
+                                  --context=${WORKSPACE}/todo-frontend \
+                                  --dockerfile=${WORKSPACE}/todo-frontend/Dockerfile \
                                   --destination=${DOCKERHUB_REPO}/todo-frontend:${IMAGE_TAG} \
                                   --destination=${DOCKERHUB_REPO}/todo-frontend:latest \
-                                  --docker-config=/kaniko-docker \
-                                  --cache=true --cache-ttl=24h --cache-dir=/cache
+                                  --cache=true --cache-dir=/cache --cache-ttl=24h
                             """
                         }
                     }
@@ -141,17 +162,22 @@ spec:
         }
 
         stage('Deploy to Kubernetes') {
+            when { expression { !env.skipRemainingStages } }
             steps {
                 container('kubectl') {
-                    sh """
-                        echo "🚀 Deploying to Kubernetes (namespace: ${DEPLOY_NAMESPACE})..."
-                        kubectl set image deployment/command-deployment command-service=${DOCKERHUB_REPO}/command-service:${IMAGE_TAG} -n ${DEPLOY_NAMESPACE} && \
-                        kubectl set image deployment/query-deployment query-service=${DOCKERHUB_REPO}/query-service:${IMAGE_TAG} -n ${DEPLOY_NAMESPACE} && \
-                        kubectl set image deployment/frontend-deployment frontend=${DOCKERHUB_REPO}/todo-frontend:${IMAGE_TAG} -n ${DEPLOY_NAMESPACE} && \
-                        kubectl rollout status deployment/command-deployment -n ${DEPLOY_NAMESPACE} --timeout=5m && \
-                        kubectl rollout status deployment/query-deployment -n ${DEPLOY_NAMESPACE} --timeout=5m && \
-                        kubectl rollout status deployment/frontend-deployment -n ${DEPLOY_NAMESPACE} --timeout=5m
-                    """
+                    script {
+                        def services = env.CHANGED_SERVICES.split(',')
+                        echo "🚀 Deploying changed services: ${services.join(', ')}"
+
+                        services.each { svc ->
+                            def depName = (svc == 'todo-frontend') ? 'frontend-deployment' : "${svc}-deployment"
+                            def containerName = (svc == 'todo-frontend') ? 'frontend' : svc
+                            sh """
+                                kubectl set image deployment/${depName} ${containerName}=${DOCKERHUB_REPO}/${svc}:${IMAGE_TAG} -n ${DEPLOY_NAMESPACE}
+                                kubectl rollout status deployment/${depName} -n ${DEPLOY_NAMESPACE} --timeout=5m
+                            """
+                        }
+                    }
                 }
             }
         }
@@ -159,10 +185,45 @@ spec:
 
     post {
         success {
-            echo "✅ Pipeline completed successfully!"
+            echo "✅ Smart CI/CD completed successfully!"
         }
         failure {
-            echo "❌ Pipeline failed. Check stage logs above."
+            echo "❌ Pipeline failed. Check logs above."
         }
     }
+}
+
+/** Smart CI/CD Git diff 로직 */
+def detectChangedServices() {
+    if (!env.GIT_PREVIOUS_SUCCESSFUL_COMMIT) {
+        echo "🆕 First build detected — deploying all services"
+        return 'command-service,query-service,todo-frontend'
+    }
+
+    def changedFiles = sh(
+        script: "git diff --name-only ${env.GIT_PREVIOUS_SUCCESSFUL_COMMIT}..${env.GIT_COMMIT}",
+        returnStdout: true
+    ).trim()
+
+    if (!changedFiles) {
+        echo "ℹ️ No file changes detected"
+        return ''
+    }
+
+    def files = changedFiles.split('\n')
+    def targets = ['command-service', 'query-service', 'todo-frontend']
+    def changed = []
+
+    targets.each { svc ->
+        if (files.any { it.startsWith("${svc}/") }) {
+            changed << svc
+        }
+    }
+
+    if (files.every { it == 'Jenkinsfile' }) {
+        echo "⚙️ Only Jenkinsfile changed — skipping deployment"
+        return ''
+    }
+
+    return changed.join(',')
 }
