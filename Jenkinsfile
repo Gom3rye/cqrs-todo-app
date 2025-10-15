@@ -13,7 +13,7 @@ spec:
     command: ["sleep"]
     args: ["infinity"]
   - name: kubectl
-    image: dtzar/helm-kubectl:3.15.0
+    image: bitnami/kubectl:1.30.2
     command: ["sleep"]
     args: ["infinity"]
 '''
@@ -44,7 +44,7 @@ spec:
         }
 
         stage('Build JARs') {
-            when { expression { !env.skipRemainingStages && (env.CHANGED_SERVICES.contains('command-service') || env.CHANGED_SERVICES.contains('query-service')) } }
+            when { expression { !env.skipRemainingStages } }
             steps {
                 container('gradle') {
                     script {
@@ -67,55 +67,52 @@ spec:
             }
         }
 
-        stage('Build & Push Images') {
+        stage('Build & Push Images (Kaniko Pod)') {
             when { expression { !env.skipRemainingStages } }
             steps {
                 container('kubectl') {
                     script {
                         def services = env.CHANGED_SERVICES.split(',')
                         services.each { svc ->
-                            echo "🛠 Building ${svc} with Kaniko..."
+                            echo "🛠 Building ${svc} with Kaniko pod"
 
-                            // Kaniko를 별도 Pod로 실행
+                            def kanikoYaml = """
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kaniko-${svc}-${BUILD_NUMBER}
+  namespace: jenkins
+spec:
+  serviceAccountName: jenkins-agent
+  restartPolicy: Never
+  containers:
+  - name: kaniko
+    image: gcr.io/kaniko-project/executor:v1.23.2
+    args:
+      - "--context=git://github.com/Gom3rye/cqrs-todo-app.git#${env.GIT_COMMIT}:/workspace/${svc}"
+      - "--dockerfile=/workspace/${svc}/Dockerfile"
+      - "--destination=${DOCKERHUB_REPO}/${svc}:${IMAGE_TAG}"
+      - "--destination=${DOCKERHUB_REPO}/${svc}:latest"
+      - "--cache=true"
+      - "--cache-ttl=24h"
+    volumeMounts:
+      - name: docker-config
+        mountPath: /kaniko/.docker
+        readOnly: true
+  volumes:
+  - name: docker-config
+    secret:
+      secretName: dockerhub-secret
+"""
+
+                            writeFile file: "kaniko-${svc}.yaml", text: kanikoYaml
                             sh """
-                            kubectl delete pod kaniko-${svc} -n jenkins --ignore-not-found
-                            kubectl run kaniko-${svc} -n jenkins --restart=Never \
-                              --serviceaccount=jenkins-agent \
-                              --image=gcr.io/kaniko-project/executor:v1.23.2 \
-                              --overrides='
-                              {
-                                "spec": {
-                                  "containers": [{
-                                    "name": "kaniko",
-                                    "image": "gcr.io/kaniko-project/executor:v1.23.2",
-                                    "args": [
-                                      "--context=git://github.com/Gom3rye/cqrs-todo-app.git#${env.GIT_COMMIT}:/workspace/${svc}",
-                                      "--dockerfile=/workspace/${svc}/Dockerfile",
-                                      "--destination=${DOCKERHUB_REPO}/${svc}:${IMAGE_TAG}",
-                                      "--destination=${DOCKERHUB_REPO}/${svc}:latest",
-                                      "--cache=true",
-                                      "--cache-ttl=24h"
-                                    ],
-                                    "volumeMounts": [{
-                                      "name": "docker-config",
-                                      "mountPath": "/kaniko/.docker",
-                                      "readOnly": true
-                                    }]
-                                  }],
-                                  "volumes": [{
-                                    "name": "docker-config",
-                                    "secret": {
-                                      "secretName": "dockerhub-secret"
-                                    }
-                                  }]
-                                }
-                              }'
+                                kubectl delete pod kaniko-${svc}-${BUILD_NUMBER} -n jenkins --ignore-not-found
+                                kubectl apply -f kaniko-${svc}.yaml
+                                kubectl wait --for=condition=Ready=false pod/kaniko-${svc}-${BUILD_NUMBER} -n jenkins --timeout=600s || true
+                                kubectl logs pod/kaniko-${svc}-${BUILD_NUMBER} -n jenkins --all-containers=true --tail=-1 || true
+                                kubectl delete pod kaniko-${svc}-${BUILD_NUMBER} -n jenkins --ignore-not-found
                             """
-
-                            // Kaniko Pod가 끝날 때까지 기다림
-                            sh "kubectl wait --for=condition=Ready=false pod/kaniko-${svc} -n jenkins --timeout=600s || true"
-                            sh "kubectl logs pod/kaniko-${svc} -n jenkins || true"
-                            sh "kubectl delete pod/kaniko-${svc} -n jenkins --ignore-not-found"
                         }
                     }
                 }
