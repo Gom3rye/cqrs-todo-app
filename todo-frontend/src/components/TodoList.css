@@ -61,6 +61,7 @@ h2 {
 .todo-list input[type="checkbox"] {
   margin-right: 10px;
   transform: scale(1.2);
+  background-color:rgb(102, 187, 105)
 }
 
 .delete-btn {
