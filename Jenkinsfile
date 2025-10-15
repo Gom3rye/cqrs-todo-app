@@ -37,8 +37,7 @@ spec:
 
   - name: kaniko
     image: gcr.io/kaniko-project/executor:v1.23.2
-    command: ["/busybox/sh"]
-    args: ["-c", "tail -f /dev/null"]
+    tty: true
     volumeMounts:
     - name: docker-config
       mountPath: /kaniko/.docker
