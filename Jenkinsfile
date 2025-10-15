@@ -21,8 +21,6 @@ spec:
       items:
       - key: .dockerconfigjson
         path: config.json
-  - name: workspace-volume
-    emptyDir: {}
 
   containers:
   - name: gradle
@@ -32,16 +30,21 @@ spec:
     volumeMounts:
     - name: gradle-cache
       mountPath: /home/jenkins/.gradle
-    - name: workspace-volume
-      mountPath: /home/jenkins/agent
+
+  - name: kaniko
+    image: gcr.io/kaniko-project/executor:v1.23.2
+    tty: true
+    volumeMounts:
+    - name: docker-config
+      mountPath: /kaniko/.docker
+      readOnly: true
+    - name: kaniko-cache
+      mountPath: /cache
 
   - name: kubectl
     image: dtzar/helm-kubectl:3.15.0
     command: ["sleep"]
     args: ["infinity"]
-    volumeMounts:
-    - name: workspace-volume
-      mountPath: /home/jenkins/agent
 '''
         }
     }
@@ -53,7 +56,6 @@ spec:
     }
 
     stages {
-
         stage('Detect Changes') {
             steps {
                 script {
@@ -95,49 +97,60 @@ spec:
             }
         }
 
-        stage('Build & Push Docker Images with Kaniko') {
+        stage('Build & Push Docker Images') {
             when { expression { !env.skipRemainingStages } }
-            steps {
-                script {
-                    def services = env.CHANGED_SERVICES.split(',')
-                    services.each { svc ->
-                        echo "🛠 Building ${svc} with Kaniko..."
+            parallel {
+                stage('Command Service') {
+                    when { expression { env.CHANGED_SERVICES.contains('command-service') } }
+                    steps {
+                        container('kaniko') {
+                            sh """
+                                /kaniko/executor \
+                                  --context=${WORKSPACE}/command-service \
+                                  --dockerfile=${WORKSPACE}/command-service/Dockerfile \
+                                  --destination=${DOCKERHUB_REPO}/command-service:${IMAGE_TAG} \
+                                  --destination=${DOCKERHUB_REPO}/command-service:latest \
+                                  --cache=true \
+                                  --cache-dir=/cache \
+                                  --cache-ttl=24h
+                            """
+                        }
+                    }
+                }
 
-                        sh """
-                        kubectl run kaniko-${svc}-${BUILD_NUMBER} \
-                          --rm -i -n jenkins \
-                          --image=gcr.io/kaniko-project/executor:v1.23.2 \
-                          --restart=Never \
-                          --serviceaccount=jenkins-agent \
-                          --overrides='
-                          {
-                            "spec": {
-                              "containers": [{
-                                "name": "kaniko",
-                                "image": "gcr.io/kaniko-project/executor:v1.23.2",
-                                "args": [
-                                  "--context=/workspace/${svc}",
-                                  "--dockerfile=/workspace/${svc}/Dockerfile",
-                                  "--destination=${DOCKERHUB_REPO}/${svc}:${IMAGE_TAG}",
-                                  "--destination=${DOCKERHUB_REPO}/${svc}:latest",
-                                  "--cache=true",
-                                  "--cache-dir=/cache",
-                                  "--cache-ttl=24h"
-                                ],
-                                "volumeMounts": [
-                                  { "name": "docker-config", "mountPath": "/kaniko/.docker", "readOnly": true },
-                                  { "name": "kaniko-cache", "mountPath": "/cache" },
-                                  { "name": "workspace-volume", "mountPath": "/workspace" }
-                                ]
-                              }],
-                              "volumes": [
-                                { "name": "docker-config", "secret": { "secretName": "dockerhub-secret" } },
-                                { "name": "kaniko-cache", "persistentVolumeClaim": { "claimName": "kaniko-cache-pvc" } },
-                                { "name": "workspace-volume", "emptyDir": {} }
-                              ]
-                            }
-                          }'
-                        """
+                stage('Query Service') {
+                    when { expression { env.CHANGED_SERVICES.contains('query-service') } }
+                    steps {
+                        container('kaniko') {
+                            sh """
+                                /kaniko/executor \
+                                  --context=${WORKSPACE}/query-service \
+                                  --dockerfile=${WORKSPACE}/query-service/Dockerfile \
+                                  --destination=${DOCKERHUB_REPO}/query-service:${IMAGE_TAG} \
+                                  --destination=${DOCKERHUB_REPO}/query-service:latest \
+                                  --cache=true \
+                                  --cache-dir=/cache \
+                                  --cache-ttl=24h
+                            """
+                        }
+                    }
+                }
+
+                stage('Frontend') {
+                    when { expression { env.CHANGED_SERVICES.contains('todo-frontend') } }
+                    steps {
+                        container('kaniko') {
+                            sh """
+                                /kaniko/executor \
+                                  --context=${WORKSPACE}/todo-frontend \
+                                  --dockerfile=${WORKSPACE}/todo-frontend/Dockerfile \
+                                  --destination=${DOCKERHUB_REPO}/todo-frontend:${IMAGE_TAG} \
+                                  --destination=${DOCKERHUB_REPO}/todo-frontend:latest \
+                                  --cache=true \
+                                  --cache-dir=/cache \
+                                  --cache-ttl=24h
+                            """
+                        }
                     }
                 }
             }
@@ -149,7 +162,7 @@ spec:
                 container('kubectl') {
                     script {
                         def services = env.CHANGED_SERVICES.split(',')
-                        echo "🚀 Deploying changed services: ${services.join(', ')}"
+                        echo "🚀 Deploying changed services to prod: ${services.join(', ')}"
 
                         services.each { svc ->
                             def depName = (svc == 'todo-frontend') ? 'frontend-deployment' : "${svc}-deployment"
