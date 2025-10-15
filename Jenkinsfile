@@ -8,14 +8,13 @@ kind: Pod
 spec:
   serviceAccountName: jenkins-agent
   containers:
-  - name: gradle
-    image: gradle:8.5.0-jdk21
-    command: ["sleep"]
-    args: ["infinity"]
   - name: kubectl
-    image: bitnami/kubectl:1.30.2
+    image: registry.k8s.io/kubectl:v1.30.2
     command: ["sleep"]
     args: ["infinity"]
+  - name: jnlp
+    image: jenkins/inbound-agent:3341.v0766d82b_dec0-1
+    args: ["$(JENKINS_SECRET)", "$(JENKINS_NAME)"]
 '''
     }
   }
@@ -28,13 +27,17 @@ spec:
 
   stages {
 
-    stage('Detect Changes') {
+    stage('Checkout') {
+      steps { checkout scm }
+    }
+
+    stage('Detect Changes (smart)') {
       steps {
         script {
           env.CHANGED_SERVICES = detectChangedServices()
           if (!env.CHANGED_SERVICES) {
-            echo "ℹ️ No relevant service changes — skipping build & deploy."
-            currentBuild.result = 'SUCCESS'
+            echo "ℹ️ No service dir changes — skipping build & deploy."
+            currentBuild.description = "No changes"
             env.SKIP_PIPE = 'true'
           } else {
             echo "🔍 Changed services: ${env.CHANGED_SERVICES}"
@@ -43,19 +46,7 @@ spec:
       }
     }
 
-    // (선택) 백엔드 로컬 빌드가 필요 없으므로 이 스테이지는 꺼도 됩니다.
-    stage('Optional: Quick Lint/Build Check') {
-      when { expression { env.SKIP_PIPE != 'true' } }
-      steps {
-        container('gradle') {
-          sh '''
-            echo "Quick check skip or add your lint/unit-tests here if you want"
-          '''
-        }
-      }
-    }
-
-    stage('Build & Push Images (Kaniko as Job)') {
+    stage('Build & Push Images (Kaniko Job per service)') {
       when { expression { env.SKIP_PIPE != 'true' } }
       steps {
         container('kubectl') {
@@ -63,13 +54,14 @@ spec:
             def services = env.CHANGED_SERVICES.split(',')
             services.each { svc ->
               echo "🛠 Building ${svc} with Kaniko Job"
+              def jobName = "kaniko-${svc}-${env.BUILD_NUMBER}"
 
-              // Kaniko Job(배치) 생성: Git context + sub-path + Dockerfile 지정
+              // Kaniko Job YAML (git context + sub-path + service Dockerfile)
               def jobYaml = """
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: kaniko-${svc}-${BUILD_NUMBER}
+  name: ${jobName}
   namespace: jenkins
 spec:
   ttlSecondsAfterFinished: 60
@@ -99,23 +91,22 @@ spec:
           secretName: dockerhub-secret
 """
 
-              writeFile file: "kaniko-job-${svc}.yaml", text: jobYaml
+              writeFile file: "kaniko-${svc}.yaml", text: jobYaml
 
               sh """
-                # 이전 잔여 Job 제거
-                kubectl delete job kaniko-${svc}-${BUILD_NUMBER} -n jenkins --ignore-not-found
+                # 혹시 남아있는 동일 이름 Job 제거
+                kubectl delete job ${jobName} -n jenkins --ignore-not-found
 
-                # Job 생성
-                kubectl apply -f kaniko-job-${svc}.yaml
+                kubectl apply -f kaniko-${svc}.yaml
 
-                # 완료 대기 (Complete)
-                kubectl wait --for=condition=Complete job/kaniko-${svc}-${BUILD_NUMBER} -n jenkins --timeout=15m
+                # 성공 대기 (Complete)
+                kubectl wait --for=condition=Complete job/${jobName} -n jenkins --timeout=20m
 
-                # 로그 확인
-                kubectl logs job/kaniko-${svc}-${BUILD_NUMBER} -n jenkins --all-containers=true --tail=-1 || true
+                # 로그 보기
+                kubectl logs job/${jobName} -n jenkins --all-containers=true --tail=-1 || true
 
-                # 정리(선택: ttlSecondsAfterFinished로도 자동 삭제됨)
-                kubectl delete job kaniko-${svc}-${BUILD_NUMBER} -n jenkins --ignore-not-found
+                # 정리(선택) — ttlSecondsAfterFinished 가 있어 자동 삭제되지만 즉시 지워도 됨
+                kubectl delete job ${jobName} -n jenkins --ignore-not-found
               """
             }
           }
@@ -123,17 +114,17 @@ spec:
       }
     }
 
-    stage('Deploy to Kubernetes') {
+    stage('Deploy to Kubernetes (prod)') {
       when { expression { env.SKIP_PIPE != 'true' } }
       steps {
         container('kubectl') {
           script {
             def services = env.CHANGED_SERVICES.split(',')
             echo "🚀 Deploying: ${services.join(', ')}"
-
             services.each { svc ->
               def depName = (svc == 'todo-frontend') ? 'frontend-deployment' : "${svc}-deployment"
               def containerName = (svc == 'todo-frontend') ? 'frontend' : svc
+
               sh """
                 kubectl set image deployment/${depName} ${containerName}=${DOCKERHUB_REPO}/${svc}:${IMAGE_TAG} -n ${DEPLOY_NAMESPACE}
                 kubectl rollout status deployment/${depName} -n ${DEPLOY_NAMESPACE} --timeout=5m
@@ -150,14 +141,14 @@ spec:
       echo "✅ Smart CI/CD finished successfully."
     }
     failure {
-      echo "❌ Pipeline failed. Check logs above."
+      echo "❌ Pipeline failed. Check stage logs above."
     }
   }
 }
 
 def detectChangedServices() {
   if (!env.GIT_PREVIOUS_SUCCESSFUL_COMMIT) {
-    echo "🆕 First build detected — deploying all services"
+    echo "🆕 First build — all services"
     return 'command-service,query-service,todo-frontend'
   }
   def changed = sh(
@@ -166,11 +157,11 @@ def detectChangedServices() {
   ).trim()
   if (!changed) return ''
 
-  def files = changed.split('\n').findAll { it }
+  def files = changed.split('\\n').findAll { it }
   def svcList = ['command-service','query-service','todo-frontend']
-  def touched = svcList.findAll { svc -> files.any { it.startsWith("${svc}/") } }
+  def touched = svcList.findAll { svc -> files.any { it.startsWith(\"${svc}/\") } }
 
-  // Jenkinsfile만 바뀐 경우 스킵
+  // Jenkinsfile만 바뀐 경우 → 스킵
   if (touched.isEmpty() && files.every { it == 'Jenkinsfile' }) return ''
   return touched.join(',')
 }
