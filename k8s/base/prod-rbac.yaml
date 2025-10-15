@@ -1,0 +1,33 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: prod-deployer-role
+  namespace: prod
+rules:
+# 이미지 업데이트/롤아웃을 위해 deployments 패치 + 상태 조회
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch", "update", "patch"]
+# rollout status가 내부적으로 pods/rs를 조회하므로 읽기 허용
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+# (선택) 서비스/컨피그맵을 건드릴 수 있도록 하려면 주석 해제
+# - apiGroups: [""]
+#   resources: ["services", "configmaps"]
+#   verbs: ["get", "list", "watch", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: prod-deployer-binding
+  namespace: prod
+subjects:
+- kind: ServiceAccount
+  name: jenkins-agent
+  namespace: jenkins   # 중요: SA는 jenkins 네임스페이스에 있음
+roleRef:
+  kind: Role
+  name: prod-deployer-role
+  apiGroup: rbac.authorization.k8s.io
+

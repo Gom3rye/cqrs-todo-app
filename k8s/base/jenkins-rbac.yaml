@@ -10,12 +10,18 @@ metadata:
   name: jenkins-agent-role
   namespace: jenkins
 rules:
-- apiGroups: ["", "apps"]
-  resources: ["pods", "deployments", "services", "configmaps"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Kaniko Job을 만들고 지우고 상태를 볼 수 있어야 함
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["get", "list", "watch", "create", "delete"]
+# Job이 만드는 Pod 상태/로그 확인
 - apiGroups: [""]
-  resources: ["pods/log", "pods/exec"]
-  verbs: ["get", "list"]
+  resources: ["pods", "pods/log"]
+  verbs: ["get", "list", "watch"]
+# (기존) 파이프라인에서 쓸 수 있는 리소스들
+- apiGroups: ["", "apps"]
+  resources: ["deployments", "services", "configmaps"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -30,3 +36,4 @@ roleRef:
   kind: Role
   name: jenkins-agent-role
   apiGroup: rbac.authorization.k8s.io
+
