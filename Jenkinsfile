@@ -12,7 +12,6 @@ spec:
   - name: kubectl
     image: dtzar/helm-kubectl:3.15.0
     command: ["sh","-c"]
-    # 사이드카 안정화
     args: ["trap : TERM INT; sleep infinity & wait"]
     volumeMounts:
     - name: workspace-volume
@@ -38,16 +37,25 @@ spec:
 
   environment {
     DOCKERHUB_REPO   = 'kyla333'
-    IMAGE_TAG        = "${env.GIT_COMMIT?.take(7) ?: 'latest'}"
     DEPLOY_NAMESPACE = 'prod'
-    KANIKO_IMAGE     = 'gcr.io/kaniko-project/executor:v1.23.2'
     JENKINS_NS       = 'jenkins'
+    KANIKO_IMAGE     = 'gcr.io/kaniko-project/executor:v1.23.2'
+    // 💡 동적 값은 여기 넣지 말 것!
   }
 
   stages {
-
     stage('Checkout') {
       steps { checkout scm }
+    }
+
+    stage('Init Vars') {
+      steps {
+        script {
+          // 안전하게 현재 커밋 해시를 태그로 사용
+          env.IMAGE_TAG = sh(script: 'git rev-parse --short=7 HEAD', returnStdout: true).trim()
+          echo "IMAGE_TAG resolved to: ${env.IMAGE_TAG}"
+        }
+      }
     }
 
     stage('Detect Changes (smart)') {
@@ -113,12 +121,7 @@ spec:
               sh """
                 set -euo pipefail
                 kubectl delete job ${jobName} -n ${JENKINS_NS} --ignore-not-found
-
-                n=0; until [ \$n -ge 3 ]; do
-                  kubectl apply -f kaniko-${svc}.yaml && break
-                  n=\$((n+1)); echo "apply retry \$n"; sleep 3
-                done
-
+                kubectl apply -f kaniko-${svc}.yaml
                 kubectl wait --for=condition=Complete job/${jobName} -n ${JENKINS_NS} --timeout=25m
                 kubectl logs job/${jobName} -n ${JENKINS_NS} --all-containers=true --tail=-1 || true
                 kubectl delete job ${jobName} -n ${JENKINS_NS} --ignore-not-found
@@ -136,11 +139,9 @@ spec:
           script {
             def services = env.CHANGED_SERVICES.split(',')
             echo "🚀 Deploying to ${DEPLOY_NAMESPACE}: ${services.join(', ')}"
-
             services.each { svc ->
               def depName = (svc == 'todo-frontend') ? 'frontend-deployment' : "${svc}-deployment"
               def containerName = (svc == 'todo-frontend') ? 'frontend' : svc
-
               sh """
                 set -euo pipefail
                 kubectl set image deployment/${depName} ${containerName}=${DOCKERHUB_REPO}/${svc}:${IMAGE_TAG} -n ${DEPLOY_NAMESPACE}
@@ -155,7 +156,7 @@ spec:
 
   post {
     success {
-      echo "✅ Smart CI/CD finished successfully. (tag=${IMAGE_TAG}, services=${env.CHANGED_SERVICES ?: 'none'})"
+      echo "✅ Smart CI/CD finished successfully. (tag=${env.IMAGE_TAG}, services=${env.CHANGED_SERVICES ?: 'none'})"
     }
     failure {
       echo "❌ Pipeline failed. Check logs above."
@@ -166,23 +167,20 @@ spec:
   }
 }
 
+// === helper ===
 def detectChangedServices() {
   if (!env.GIT_PREVIOUS_SUCCESSFUL_COMMIT) {
     echo "🆕 First successful build not found — build all services"
     return 'command-service,query-service,todo-frontend'
   }
-
   def diff = sh(
     script: "git diff --name-only ${env.GIT_PREVIOUS_SUCCESSFUL_COMMIT}..${env.GIT_COMMIT}",
     returnStdout: true
   ).trim()
-
   if (!diff) return ''
-
   def files = diff.split('\\n').findAll { it?.trim() }
   def services = ['command-service','query-service','todo-frontend']
   def touched = services.findAll { svc -> files.any { it.startsWith("${svc}/") } }
-
   def onlyJf = touched.isEmpty() && files.every { it == 'Jenkinsfile' }
   return onlyJf ? '' : touched.join(',')
 }
