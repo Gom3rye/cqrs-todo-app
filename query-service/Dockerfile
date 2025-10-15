@@ -1,12 +1,11 @@
-# 1. 실행 환경(JRE)이 포함된 가벼운 베이스 이미지 선택
+# 1. Java 21 JRE 기반의 경량 이미지 사용
 FROM eclipse-temurin:21-jre-jammy
 
-# 2. JAR 파일이 위치할 디렉토리 지정
+# 2. 작업 디렉토리 설정
 WORKDIR /app
 
-# 3. 빌드된 JAR 파일을 컨테이너 안으로 복사하고 이름을 app.jar로 변경
-# build/libs/ 폴더 안의 어떤 이름의 jar 파일이든 app.jar로 복사됩니다.
-COPY build/libs/*.jar /app/
-# 4. 컨테이너가 시작될 때 실행할 명령어
+# 3. 고정된 이름의 JAR 파일 복사
+COPY build/libs/app.jar /app/app.jar
 
-CMD ["sh", "-c", "java -jar /app/*.jar"]
+# 4. 애플리케이션 실행
+CMD ["java", "-jar", "/app/app.jar"]
