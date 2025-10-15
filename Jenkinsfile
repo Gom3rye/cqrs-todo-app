@@ -34,13 +34,6 @@ spec:
       mountPath: /home/jenkins/.gradle
     - name: workspace-volume
       mountPath: /home/jenkins/agent
-    resources:
-      requests:
-        cpu: "500m"
-        memory: "1Gi"
-      limits:
-        cpu: "1000m"
-        memory: "2Gi"
 
   - name: kaniko
     image: gcr.io/kaniko-project/executor:debug
@@ -53,28 +46,15 @@ spec:
       mountPath: /cache
     - name: workspace-volume
       mountPath: /home/jenkins/agent
-    resources:
-      requests:
-        cpu: "500m"
-        memory: "512Mi"
-      limits:
-        cpu: "1000m"
-        memory: "1Gi"
 
+  # ✅ 여기 변경됨
   - name: kubectl
-    image: lachlanevenson/k8s-kubectl:v1.30.0
+    image: bitnami/kubectl:1.30.2
     command: ["sleep"]
     args: ["infinity"]
     volumeMounts:
     - name: workspace-volume
       mountPath: /home/jenkins/agent
-    resources:
-      requests:
-        cpu: "100m"
-        memory: "128Mi"
-      limits:
-        cpu: "200m"
-        memory: "256Mi"
 '''
         }
     }
@@ -89,19 +69,17 @@ spec:
         stage('Build Backend JARs') {
             steps {
                 container('gradle') {
-                    script {
-                        sh '''
-                            echo "🚀 Building command-service..."
-                            cd command-service
-                            chmod +x gradlew
-                            ./gradlew clean build -x test
+                    sh '''
+                        echo "🚀 Building command-service..."
+                        cd command-service
+                        chmod +x gradlew
+                        ./gradlew clean build -x test
 
-                            echo "🚀 Building query-service..."
-                            cd ../query-service
-                            chmod +x gradlew
-                            ./gradlew clean build -x test
-                        '''
-                    }
+                        echo "🚀 Building query-service..."
+                        cd ../query-service
+                        chmod +x gradlew
+                        ./gradlew clean build -x test
+                    '''
                 }
             }
         }
@@ -192,7 +170,6 @@ spec:
     }
 }
 
-// 🔍 함수: 어떤 서비스가 바뀌었는지 탐지
 def findChangedServices() {
     if (!env.GIT_PREVIOUS_SUCCESSFUL_COMMIT) {
         echo "🆕 First build detected — deploying all services."
