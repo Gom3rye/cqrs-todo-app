@@ -170,16 +170,13 @@ spec:
                         builds['Command Service'] = {
                             container('kaniko-command') {
                                 sh """
-                                    /kaniko/executor \
-                                      --context=\${WORKSPACE}/command-service \
-                                      --dockerfile=\${WORKSPACE}/command-service/Dockerfile \
-                                      --destination=${dockerRepo}/command-service:${imageTag} \
-                                      --destination=${dockerRepo}/command-service:latest \
-                                      --cache=true \
-                                      --cache-ttl=24h \
-                                      --cache-dir=/cache \
-                                      --skip-unused-stages \
-                                      --compressed-caching=false
+                                    /kaniko/executor \\
+                                      --context=\${WORKSPACE}/command-service \\
+                                      --dockerfile=\${WORKSPACE}/command-service/Dockerfile \\
+                                      --destination=${dockerRepo}/command-service:${imageTag} \\
+                                      --destination=${dockerRepo}/command-service:latest \\
+                                      --cache=true --cache-ttl=24h --cache-dir=/cache \\
+                                      --cache-repo=${dockerRepo}/command-service-cache
                                 """
                                 echo "✅ command-service:${imageTag} pushed"
                             }
@@ -190,16 +187,13 @@ spec:
                         builds['Query Service'] = {
                             container('kaniko-query') {
                                 sh """
-                                    /kaniko/executor \
-                                      --context=\${WORKSPACE}/query-service \
-                                      --dockerfile=\${WORKSPACE}/query-service/Dockerfile \
-                                      --destination=${dockerRepo}/query-service:${imageTag} \
-                                      --destination=${dockerRepo}/query-service:latest \
-                                      --cache=true \
-                                      --cache-ttl=24h \
-                                      --cache-dir=/cache \
-                                      --skip-unused-stages \
-                                      --compressed-caching=false
+                                    /kaniko/executor \\
+                                      --context=\${WORKSPACE}/query-service \\
+                                      --dockerfile=\${WORKSPACE}/query-service/Dockerfile \\
+                                      --destination=${dockerRepo}/query-service:${imageTag} \\
+                                      --destination=${dockerRepo}/query-service:latest \\
+                                      --cache=true --cache-ttl=24h --cache-dir=/cache \\
+                                      --cache-repo=${dockerRepo}/query-service-cache
                                 """
                                 echo "✅ query-service:${imageTag} pushed"
                             }
@@ -210,16 +204,13 @@ spec:
                         builds['Frontend'] = {
                             container('kaniko-frontend') {
                                 sh """
-                                    /kaniko/executor \
-                                      --context=\${WORKSPACE}/todo-frontend \
-                                      --dockerfile=\${WORKSPACE}/todo-frontend/Dockerfile \
-                                      --destination=${dockerRepo}/todo-frontend:${imageTag} \
-                                      --destination=${dockerRepo}/todo-frontend:latest \
-                                      --cache=true \
-                                      --cache-ttl=24h \
-                                      --cache-dir=/cache \
-                                      --skip-unused-stages \
-                                      --compressed-caching=false
+                                    /kaniko/executor \\
+                                      --context=\${WORKSPACE}/todo-frontend \\
+                                      --dockerfile=\${WORKSPACE}/todo-frontend/Dockerfile \\
+                                      --destination=${dockerRepo}/todo-frontend:${imageTag} \\
+                                      --destination=${dockerRepo}/todo-frontend:latest \\
+                                      --cache=true --cache-ttl=24h --cache-dir=/cache \\
+                                      --cache-repo=${dockerRepo}/todo-frontend-cache
                                 """
                                 echo "✅ todo-frontend:${imageTag} pushed"
                             }
