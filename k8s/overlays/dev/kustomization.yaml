@@ -19,3 +19,17 @@ patches:
 - path: patch-command-replicas.yaml
 - path: patch-query-replicas.yaml
 - path: patch-frontend-replicas.yaml
+
+# NFS Provisioner ClusterRoleBinding 네임스페이스 자동 치환
+replacements:
+  - source:
+      kind: ServiceAccount
+      name: nfs-client-provisioner
+      fieldPath: metadata.namespace
+    targets:
+      - select:
+          kind: ClusterRoleBinding
+          name: run-nfs-client-provisioner
+        fieldPaths:
+          - subjects.[name=nfs-client-provisioner].namespace
+
