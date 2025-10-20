@@ -1,26 +1,34 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# base 리소스 목록
 resources:
-- app-configmap.yaml
-- command-service-deployment.yaml
-- command-service-service.yaml
-- frontend-deployment.yaml
-- frontend-service.yaml
-- kafka-deployment.yaml
-- kafka-service.yaml
-- mongo-headless-service.yaml
-- mongo-service.yaml
-- mongo-statefulset.yaml
-- mysql-headless-service.yaml
-- mysql-secret.yaml
-- mysql-service.yaml
-- mysql-statefulset.yaml
-- nfs-provisioner-deployment.yaml
-- nfs-provisioner-rbac.yaml
-- nfs-storageclass.yaml
-- query-service-deployment.yaml
-- query-service-service.yaml
-- zookeeper-deployment.yaml
-- zookeeper-service.yaml
+  # Database
+  - mysql-secret.yaml
+  - mysql-headless-service.yaml
+  - mysql-service.yaml
+  - mysql-statefulset.yaml
+  - mongo-headless-service.yaml
+  - mongo-service.yaml
+  - mongo-statefulset.yaml
+  
+  # Kafka
+  - zookeeper-deployment.yaml
+  - zookeeper-service.yaml
+  - kafka-deployment.yaml
+  - kafka-service.yaml
+  
+  # Application Services
+  - app-configmap.yaml
+  - command-service-deployment.yaml
+  - command-service-service.yaml
+  - query-service-deployment.yaml
+  - query-service-service.yaml
+  - frontend-deployment.yaml
+  - frontend-service.yaml
+  
+  # NFS Storage (dev/prod 공통)
+  - nfs-storageclass.yaml
+  - nfs-provisioner-rbac.yaml
+  - nfs-provisioner-deployment.yaml
+  
+  # LoadBalancer
