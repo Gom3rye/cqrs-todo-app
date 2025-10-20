@@ -3,6 +3,7 @@ kind: Kustomization
 
 resources:
 - ../../base
+- prod-rbac.yaml
 
 namespace: prod
 
@@ -11,3 +12,18 @@ patches:
 - path: patch-query-replicas.yaml
 - path: patch-frontend-replicas.yaml
 - path: patch-frontend-nodeport.yaml # <-- 운영환경에서는 노트포트 30080으로 지정
+
+# NFS Provisioner ClusterRoleBinding 네임스페이스 자동 치환
+replacements:
+  - source:
+      kind: ServiceAccount
+      name: nfs-client-provisioner
+      fieldPath: metadata.namespace
+    targets:
+      - select:
+          kind: ClusterRoleBinding
+          name: run-nfs-client-provisioner
+        fieldPaths:
+          - subjects.[name=nfs-client-provisioner].namespace
+
+# ClusterRoleBinding 이름 중복 방지
